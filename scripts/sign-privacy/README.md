@@ -1,15 +1,15 @@
-# Baritone 1.20.0: sign privacy and movement compatibility
+# Baritone 1.20.0: sign privacy, movement and mining compatibility
 
 Target: **Minecraft 26.3, Fabric Loader 0.19.5 or later, Java 25 or later**.
 
 The candidate includes the sign privacy patch and the Minecraft 26.3 keyboard
-input correction described in `docs/anticheat-compatibility.md`.
+input and mining corrections described in `docs/anticheat-compatibility.md`.
 
-The installable JAR is `dist/baritone-api-fabric-1.20.0-compat.1.jar`.
+The installable JAR is `dist/baritone-api-fabric-1.20.0-compat.2.jar`.
 Replace the existing Baritone JAR in the instance's `mods` directory with this file.
 Restart Minecraft, and run `#help` to confirm Baritone loads. Only one Baritone JAR
 should be installed. This is the API release with its normal commands and bundled
-nether pathfinder. The movement input class is replaced; every other original
+nether pathfinder. The movement and mining classes are replaced; every other original
 class and nested JAR is preserved byte for byte.
 
 ## What the patch does
@@ -26,7 +26,10 @@ retain their ordinary behavior.
 This is scoped to the sign translation probe described in the request. Other
 installed mods can still resolve their own probe keys. The movement correction
 normalizes diagonal input and leaves sneak slowdown to Minecraft, matching its
-keyboard input path. Other anti-cheat checks have not been verified.
+keyboard input path. Mining now sends Minecraft 26.3’s normal `Punch` packet
+after each mining swing and uses the held item’s attack animation. The game
+controller still determines mining progress and block destruction. Other
+anti-cheat checks have not been fully verified.
 
 An important correction to the supplied explanation: the official Baritone
 v1.20.0 Fabric JAR has **no `assets/*/lang/*` files**, and its source does not
@@ -61,10 +64,12 @@ resource, which alone is not proof that the corresponding mod is installed.
   changing fallbacks. All return the supplied fallback and normal keybind control.
 - Repeated all 100 cases with the official unpatched release: the local translation
   appears in the outgoing packet, establishing a positive control.
+- Compiled the changed BlockBreakHelper source against the real Minecraft 26.3
+  and Baritone API classes.
 - Initialized the real Baritone API, core pathing/input processes, and the
   help/goto/stop/mine/build/follow command registrations in the headless runtime.
 - Compiled the included mixin source against the real game and Mixin API.
-- Checked archive integrity: only the movement class, Fabric metadata, and mixin
+- Checked archive integrity: only the movement/mining classes, Fabric metadata, and mixin
   configuration change. Four classes are added; bundled libraries are unchanged.
 
 Compilation and fixture execution used an offline bubblewrap sandbox with a
@@ -83,6 +88,22 @@ Fabric 0.19.5 and no dependency override. The earlier 0.19.3 cache checks used a
 scratch-only override; the artifact has always required 0.19.5+. Full game and
 server gameplay validation is tracked separately in the clean-room benchmark
 project. These unit/runtime checks do not establish a complete anti-cheat bypass.**
+
+## Mining gameplay checks (compat.2)
+
+A rendered client joined a disposable Paper 26.3 build 140 server with public
+Grim 2.3.74-61117c2 and experimental checks enabled. All three profiles mined nine
+of nine stone blocks, with nine server-confirmed air states, nine cobblestone
+collected, 63 normal Punch packets and no NoSwingBreak flags. The old build sends
+zero Punch packets and triggers 18 NoSwingBreak flags in the comparison.
+
+An explicit synthetic server rule requiring a recent Punch reproduces 32 block
+restorations with the old build. Compat.2 has zero restorations and mines all
+nine. A normal attack-key control also removes all nine with zero restorations
+or flags. This is a test rule, not a claim about the private server. Startup timer
+flags remain in some ordinary profiles; the conservative trial also has a startup
+BadPacketsR flag. Full details are in `docs/anticheat-compatibility.md` and the
+separate clean-room report. The private server's exact rejection remains unknown.
 
 ## Validate on your server
 
@@ -134,7 +155,7 @@ Run the real-runtime tests with already cached Linux launcher libraries:
 python3 scripts/compatibility/test_runtime.py \
   --minecraft /path/to/minecraft-26.3.jar \
   --metadata /path/to/26.3.json \
-  --candidate dist/baritone-api-fabric-1.20.0-compat.1.jar \
+  --candidate dist/baritone-api-fabric-1.20.0-compat.2.jar \
   --libraries /path/to/launcher/meta/libraries \
   --fabric-runtime \
   --upstream-control /path/to/baritone-api-fabric-1.20.0.jar

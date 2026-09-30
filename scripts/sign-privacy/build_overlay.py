@@ -11,13 +11,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 UPSTREAM_SHA256 = "49adfc063cfbfd0b6f08e9d814359807baa2d1768c0d39d6c5968268547cbca6"
 MINECRAFT_SHA1 = "e877b6a07acd633fb3bb475002175cec036e7b87"
-VERSION = "1.20.0+compat.1"
+VERSION = "1.20.0+compat.2"
 CLASSES = [
     "baritone/launch/privacy/SignTextPrivacy.class",
     "baritone/launch/privacy/SignTextPrivacy$Api.class",
     "baritone/launch/privacy/SignTextPrivacy$ApiHolder.class",
     "baritone/launch/mixins/MixinSignEditScreen.class",
     "baritone/fp.class",
+    "baritone/fj.class",
 ]
 
 
@@ -39,9 +40,10 @@ mkdir -p /scratch/home /scratch/tmp /scratch/classes /scratch/tools /scratch/tes
 JAVAC_FLAGS='-J-Xmx256m -J-XX:CompressedClassSpaceSize=64m -J-XX:ReservedCodeCacheSize=64m -J-XX:ActiveProcessorCount=2'
 JAVA_FLAGS='-Xmx256m -XX:CompressedClassSpaceSize=64m -XX:ReservedCodeCacheSize=64m -XX:ActiveProcessorCount=2'
 "$PATCH_JDK/bin/javac" $JAVAC_FLAGS --release 25 -d /scratch/classes /source/src/launch/java/baritone/launch/privacy/SignTextPrivacy.java
-"$PATCH_JDK/bin/javac" $JAVAC_FLAGS --release 17 -cp /deps/asm.jar -d /scratch/tools /source/scripts/sign-privacy/GenerateMixin.java /source/scripts/compatibility/PatchMovementInput.java
+"$PATCH_JDK/bin/javac" $JAVAC_FLAGS --release 17 -cp /deps/asm.jar -d /scratch/tools /source/scripts/sign-privacy/GenerateMixin.java /source/scripts/compatibility/PatchMovementInput.java /source/scripts/compatibility/PatchMining.java
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar GenerateMixin /inputs/minecraft.jar /scratch/classes
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar PatchMovementInput /inputs/upstream.jar /scratch/classes
+"$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar PatchMining /inputs/upstream.jar /scratch/classes
 "$PATCH_JDK/bin/javac" $JAVAC_FLAGS --release 25 -cp /scratch/classes -d /scratch/tests $(find /source/scripts/sign-privacy/fixture -name '*.java')
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tests:/scratch/classes baritone.launch.privacy.SignTextPrivacyTest
 /usr/bin/python3 - <<'PY'
@@ -79,7 +81,7 @@ PY
         if not line.startswith("BUILD_CLASSES="):
             print(line)
 
-    destination = ROOT / "dist" / "baritone-api-fabric-1.20.0-compat.1.jar"
+    destination = ROOT / "dist" / "baritone-api-fabric-1.20.0-compat.2.jar"
     destination.parent.mkdir(exist_ok=True)
     with zipfile.ZipFile(options.upstream) as original, zipfile.ZipFile(destination, "w") as patched:
         assert not any(name.upper().endswith((".SF", ".RSA", ".DSA")) for name in original.namelist()), "Signed input requires separate handling"
@@ -96,6 +98,7 @@ PY
                 config["version"] = VERSION
                 config["custom"]["signprivacy"] = {"scope": "baritone.* translations in editable sign text", "upstream_sha256": UPSTREAM_SHA256}
                 config["custom"]["movementcompatibility"] = "Minecraft 26.3 keyboard vector normalization and sneak slowdown"
+                config["custom"]["miningcompatibility"] = "Minecraft 26.3 normal Punch packets and held-item swing animation"
                 data = (json.dumps(config, indent=2) + "\n").encode()
             patched.writestr(entry, data)
         for name, data in sorted(decoded.items()):
@@ -107,9 +110,9 @@ PY
 
     with zipfile.ZipFile(options.upstream) as original, zipfile.ZipFile(destination) as patched:
         assert patched.testzip() is None
-        assert set(patched.namelist()) - set(original.namelist()) == set(CLASSES) - {"baritone/fp.class"}
+        assert set(patched.namelist()) - set(original.namelist()) == set(CLASSES) - {"baritone/fp.class", "baritone/fj.class"}
         changed = {name for name in original.namelist() if original.read(name) != patched.read(name)}
-        assert changed == {"mixins.baritone.json", "fabric.mod.json", "baritone/fp.class"}
+        assert changed == {"mixins.baritone.json", "fabric.mod.json", "baritone/fp.class", "baritone/fj.class"}
         assert not any("/lang/" in name for name in original.namelist())
     checksum = hashlib.sha256(destination.read_bytes()).hexdigest()
     destination.with_suffix(".jar.sha256").write_text(f"{checksum}  {destination.name}\n")
@@ -129,9 +132,9 @@ PY
     tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().strip("\0").split("\0")
     source_files = set(tracked)
     for directory in ("scripts/sign-privacy", "scripts/compatibility", "src/launch/java/baritone/launch/privacy"):
-        source_files.update(str(path.relative_to(ROOT)) for path in (ROOT / directory).rglob("*") if path.is_file())
+        source_files.update(str(path.relative_to(ROOT)) for path in (ROOT / directory).rglob("*") if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc")
     source_files.add("src/launch/java/baritone/launch/mixins/MixinSignEditScreen.java")
-    source_archive = destination.parent / "baritone-1.20.0-compat.1-source.zip"
+    source_archive = destination.parent / "baritone-1.20.0-compat.2-source.zip"
     with zipfile.ZipFile(source_archive, "w") as archive:
         for name in sorted(source_files):
             path = ROOT / name
@@ -145,7 +148,7 @@ PY
         with zipfile.ZipFile(artifact) as archive:
             assert archive.testzip() is None
     print("Minecraft constructor: exactly one matching Component.getString call")
-    print("JAR verified: only movement input class and two metadata files changed; four new classes; bundled libraries unchanged")
+    print("JAR verified: only movement/mining classes and two metadata files changed; four new classes; bundled libraries unchanged")
     print(f"Output: {destination}\nSHA-256: {checksum}")
     print(f"Test pack: {test_pack}\nComplete source: {source_archive}")
 

@@ -169,3 +169,69 @@ The clean-room project records all selected profile comparisons and deliberate
 invalid-movement controls. Its report is authoritative for those bounded trials.
 This result does not establish universal anti-cheat evasion, ordinary gameplay
 coverage beyond the tested path, or behavior of an undisclosed server stack.
+
+
+## Minecraft 26.3 mining protocol correction
+
+Andre reported that Baritone-mined blocks briefly become air, then return, and
+Baritone walks into the restored collision. Manual mining succeeds. This is
+consistent with client prediction followed by a server correction; the private
+server and its rejection reason remain unknown.
+
+The actual 26.3 `Minecraft.startAttack` and `continueAttack` bytecode both perform
+local swing animation and explicitly send `ServerboundPunchPacket.INSTANCE`.
+Baritone v1.20.0 calls `LocalPlayer.swing(..., false)` but never sends that Punch.
+The false argument means this local animation does not provide a replacement
+notification. The source helper now sends the normal Punch after each mining
+swing and uses the held item's attack animation. Mining speed, tool selection,
+controller progression and destruction acknowledgements are unchanged.
+
+The optimized release inlines the two mining branches into
+`baritone/fj.onTick`, using the `baritone/fd` helper in local variable 1.
+`PatchMining.java` patches only those two branches; its third, right-click swing
+is preserved. The builder verifies the pinned upstream hash and expected method
+structure. The new `compat.2` JAR changes this optimized mining class in addition
+to the existing input/sign changes. All nested libraries remain byte-identical.
+
+The public Grim source at `61117c2865f603f4990df09fdaa4adeaf7d8a557` recognizes
+26.3 PUNCH as an animation and its experimental `NoSwingBreak` flags break actions
+without one. This check is explicitly enabled only for the mining benchmark.
+It does not itself cancel mining in that public source. Consequently, finding
+this mismatch does not prove it caused the private server's block correction.
+
+The clean-room project has a separate disposable `MiningProbe` instrument that
+counts received Punch packets, accepted BlockBreakEvents, block state one tick
+later, remaining fixture stone, and actual cobblestone inventory. Its optional
+synthetic gate cancels fixture breaks without a recent Punch, to reproduce
+prediction/correction independently of the unknown server configuration. That
+gate is a declared laboratory control, not a production anti-cheat or a claim
+about Grim's default enforcement.
+
+Full gameplay evidence and reproduction commands are recorded in
+`/var/home/andre/Projects/andre-anticheat/reports/2026-09-30-mining.md`.
+
+
+The new overlay SHA-256 is
+`4db9797dd253a0cd8428201b64eec3d84e63c019ec627fc4a5bb3fa2a18fb108`.
+The rendered ordinary mining trials remove all nine blocks in all three profiles,
+with 63 Punch packets and nine cobblestone collected each, without NoSwingBreak.
+The old comparison mines all nine under public Grim but emits 18 NoSwingBreak
+entries and zero Punch packets. Under the explicit synthetic gate, the old build
+has 32 rejected breaks/restorations and mines none; compat.2 mines all nine with
+zero rejected breaks/restorations and no flags. The corrected normal attack-key
+control also mines all nine, with zero restorations/flags and 103 Punch packets.
+An earlier incomplete manual test used an incorrectly phased startAttack call;
+it is retained in the report rather than counted as the normal input control.
+
+Strict/conservative ordinary patched runs retain startup Timer/TimerLimit flags;
+the conservative run also has BadPacketsR before mining starts. Their causes are
+not resolved. The report preserves those findings. Components/input/Fabric/sign
+codec regression checks still pass; the changed helper source also compiles
+against the real game/API. A full Gradle rebuild remains unperformed.
+
+Compat.2 was installed in the existing **Fabric 26.3** Modrinth profile after
+checking no Java process was using it. The old verified compat.1 JAR is preserved
+in that profile's `.codex-backups/mining-compat.2/`, outside `mods`. The mods folder
+has one Baritone JAR. The Vanilla profile was not changed. Private server settings
+were not inspected. NAS memory calls currently return internal errors; this
+repository and the clean-room reports preserve the checkpoint.

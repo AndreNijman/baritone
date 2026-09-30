@@ -78,6 +78,8 @@ def main():
 set -eu
 mkdir -p /scratch/home /scratch/tmp /scratch/classes /scratch/game/mods /scratch/game/config /scratch/etc
 echo '127.0.0.1 localhost' > /scratch/etc/hosts
+mkdir -p /scratch/sourcecheck
+"$PATCH_JDK/bin/javac" -J-Xmx256m -J-XX:ActiveProcessorCount=2 --release 25 -cp "$PATCH_CP" -d /scratch/sourcecheck /source/src/main/java/baritone/utils/accessor/IPlayerControllerMP.java /source/src/main/java/baritone/utils/BlockBreakHelper.java
 "$PATCH_JDK/bin/javac" -J-Xmx512m -J-XX:ActiveProcessorCount=2 --release 25 -cp "$PATCH_CP" -d /scratch/classes /source/scripts/compatibility/ActualRuntimeTest.java
 "$PATCH_JDK/bin/java" -Djava.io.tmpdir=/scratch/tmp -Djdk.net.hosts.file=/scratch/etc/hosts -Xmx512m -XX:ActiveProcessorCount=2 -XX:CompressedClassSpaceSize=128m -XX:ReservedCodeCacheSize=128m --sun-misc-unsafe-memory-access=allow --enable-final-field-mutation=ALL-UNNAMED \
   -cp "/scratch/classes:$PATCH_CP" ActualRuntimeTest

@@ -21,7 +21,7 @@ import baritone.api.BaritoneAPI;
 import baritone.api.utils.IPlayerContext;
 import baritone.utils.accessor.IPlayerControllerMP;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.item.component.SwingAnimation;
+import net.minecraft.network.protocol.game.ServerboundPunchPacket;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 
@@ -63,10 +63,10 @@ public final class BlockBreakHelper {
             if (ctx.playerController().hasBrokenBlock()) {
                 ctx.playerController().syncHeldItem();
                 ctx.playerController().clickBlock(((BlockHitResult) trace).getBlockPos(), ((BlockHitResult) trace).getDirection());
-                ctx.player().swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
+                swingAndPunch();
             } else {
                 if (ctx.playerController().onPlayerDamageBlock(((BlockHitResult) trace).getBlockPos(), ((BlockHitResult) trace).getDirection())) {
-                    ctx.player().swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
+                    swingAndPunch();
                 }
                 if (ctx.playerController().hasBrokenBlock()) { // block broken this tick
                     // break delay timer only applies for multi-tick block breaks like vanilla
@@ -84,5 +84,13 @@ public final class BlockBreakHelper {
         } else {
             wasHitting = false;
         }
+    }
+
+    private void swingAndPunch() {
+        // 26.3's normal startAttack/continueAttack animate locally, then send Punch.
+        // swing(..., false) alone does not notify the server of a mining swing.
+        ctx.player().swing(InteractionHand.MAIN_HAND,
+                ctx.player().getItemInHand(InteractionHand.MAIN_HAND).getAttackAnimation(), false);
+        ctx.player().connection.send(ServerboundPunchPacket.INSTANCE);
     }
 }
