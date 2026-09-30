@@ -16,6 +16,9 @@ verified universal bypass.
 - Sign patch committed and pushed as `8d3d30a7`.
 - Built sign-only candidate: `dist/baritone-api-fabric-1.20.0-signprivacy.1.jar`.
 - Candidate SHA-256: `9698ef0c506cdc715d10cc97bc11cd5a4685f44d163dd52bb18e659871e49840`.
+- Combined sign/input candidate: `dist/baritone-api-fabric-1.20.0-compat.1.jar`.
+- Combined SHA-256: `b9fc3e716cfb8145682e601b38e5b94a2a7cb899227416a42b3a74cb43571955`.
+- Movement source fix committed/pushed as `b18a8d76`.
 - Source, positive-control pack, and test guide are preserved in the repository
   and generated locally. Generated binaries are ignored by Git.
 - Persistent-memory boot/read/write calls currently return MCP internal errors.
@@ -53,9 +56,12 @@ Run the regression check with:
 python3 scripts/compatibility/test_input.py --minecraft /path/to/minecraft-26.3.jar
 ```
 
-**This movement fix is source-only. It is not included in the sign-only JAR.**
-A complete build and in-game pathfinding/physics comparison are still required.
-No measured anti-cheat flag reduction is claimed.
+The combined `compat.1` overlay now includes the same fix in the optimized release
+class (`baritone/fp.class`); its actual methods match the real game input/vector
+classes in all 128 combinations, without those earlier API/math fixtures. The
+pinned input JAR and the class's structure are checked before replacing `tick()`.
+An in-game pathfinding/physics comparison remains unverified. No measured
+anti-cheat flag reduction is claimed.
 
 ## Further source review
 
@@ -67,8 +73,8 @@ establish the behavior of a private fork or a different installed version.
 
 | Surface | Evidence inspected | Next validation |
 | --- | --- | --- |
-| Sign translation | Baritone helper/mixin; CheckHacks fallback comparison | Launch Fabric and compare positive-control pack scans |
-| Movement input | PlayerMovementInput; actual 26.3 KeyboardInput/LocalPlayer bytecode; Grim ModernInputTransformer | Build source fix, compare walking/diagonal/sneak paths in game |
+| Sign translation | Real component assertions; Fabric/Mixin constructor redirect; patched/unpatched editor and packet-codec round trips | Supported-loader full launch and actual CheckHacks scans |
+| Movement input | Fixed source and optimized release class; actual 26.3 KeyboardInput/Vec2/Input; Grim source | Compare walking/diagonal/sneak paths in game |
 | Rotations | LookBehavior applies targets before packet updates; smoothLook runs in POST | Correlate server rotation/placement flags with packet order |
 | Placement | BlockPlaceHelper invokes the game controller; Grim RotationPlace/MultiPlace validate interaction state | Reproduce any placement flags with actual logs and configuration |
 | Mining | BlockBreakHelper uses controller progress/delay; Grim FastBreak checks progress/timing | Reproduce observed mining flags without assuming thresholds |
@@ -88,10 +94,10 @@ and a local Minecraft 26.3/Fabric instance path. Keep secrets and player-identif
 data out of shared excerpts. These facts determine which tests and changes are
 relevant; guessed plugin defaults would not establish compatibility.
 
-Next: perform runtime verification of the sign patch, complete a build containing
-the input fix, then reproduce each observed server flag separately against a
-vanilla control and the patched client. Save actual scan/flag outcomes and identify
-the concrete source mismatch before changing packet or gameplay behavior.
+Next: supported-loader full game validation and tests on the authorized server.
+Reproduce each observed server flag separately against a vanilla control and the
+patched client. Save scan/flag outcomes and identify the concrete source mismatch
+before changing packet or gameplay behavior.
 
 ## Sources
 
@@ -101,3 +107,32 @@ the concrete source mismatch before changing packet or gameplay behavior.
 - [Pinned Grim modern input transformer](https://github.com/GrimAnticheat/Grim/blob/61117c2865f603f4990df09fdaa4adeaf7d8a557/common/src/main/java/ac/grim/grimac/predictionengine/predictions/input/impl/ModernInputTransformer.java)
 - [Pinned Grim RotationPlace](https://github.com/GrimAnticheat/Grim/blob/61117c2865f603f4990df09fdaa4adeaf7d8a557/common/src/main/java/ac/grim/grimac/checks/impl/scaffolding/RotationPlace.java)
 - [Pinned Grim FastBreak](https://github.com/GrimAnticheat/Grim/blob/61117c2865f603f4990df09fdaa4adeaf7d8a557/common/src/main/java/ac/grim/grimac/checks/impl/breaking/FastBreak.java)
+
+## Autonomous runtime verification — 2026-09-30
+
+Cached Minecraft 26.3/Linux libraries enabled stronger local checks, without any
+network or changes to existing launcher profiles:
+
+- 123 assertions on real Minecraft components, including cached/nested values,
+  fallback formatting, ordinary translations, and custom forward bindings.
+- All 128 key combinations in the actual candidate input class match real
+  KeyboardInput/Vec2/Input.
+- Fabric/Knot and Mixin 0.8.7 apply exactly one redirect to the real constructor.
+- 100 patched editor constructor/removal/sign-packet-codec cases return dynamic
+  fallbacks; 100 unpatched positive-control cases return the installed translation.
+  Both sides and distinct filtered/unfiltered inputs are exercised. Packet sends
+  are captured locally; no Paper plugin or server is involved.
+- The real Baritone API initializes its core pathing/input processes and registers
+  help/goto/stop/mine/build/follow in the minimal headless client context. This is
+  initialization coverage, not in-world pathfinding or command execution.
+- The included normal mixin source compiles against the real game/Mixin API.
+
+The cache contains loader 0.19.3, below the upstream minimum 0.19.5. These Fabric
+checks use a scratch-only dependency override. The artifact still requires
+0.19.5+; this does not establish compatibility on the supported loader. Headless
+control objects use test-only allocation/reflection, and no rendered game/world
+session or complete CheckHacks sequence has been tested.
+
+Reproduction commands and resource limits: `scripts/sign-privacy/README.md`.
+Runtime log: `.validation/actual-runtime.log` (ignored, local). The memory MCP is
+still unavailable; this document is the durable project handoff.

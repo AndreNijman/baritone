@@ -1,16 +1,16 @@
-# Baritone 1.20.0: sign translation privacy patch
+# Baritone 1.20.0: sign privacy and movement compatibility
 
 Target: **Minecraft 26.3, Fabric Loader 0.19.5 or later, Java 25 or later**.
 
-Further compatibility work is recorded in `docs/anticheat-compatibility.md`.
-The movement input correction described there is source-only and is not included
-in this sign-only overlay JAR.
+The candidate includes the sign privacy patch and the Minecraft 26.3 keyboard
+input correction described in `docs/anticheat-compatibility.md`.
 
-The installable JAR is `dist/baritone-api-fabric-1.20.0-signprivacy.1.jar`.
+The installable JAR is `dist/baritone-api-fabric-1.20.0-compat.1.jar`.
 Replace the existing Baritone JAR in the instance's `mods` directory with this file.
 Restart Minecraft, and run `#help` to confirm Baritone loads. Only one Baritone JAR
 should be installed. This is the API release with its normal commands and bundled
-nether pathfinder; every original class and nested JAR is preserved byte for byte.
+nether pathfinder. The movement input class is replaced; every other original
+class and nested JAR is preserved byte for byte.
 
 ## What the patch does
 
@@ -24,8 +24,9 @@ resolution (including the `key.forward` control), and the sign update packet pat
 retain their ordinary behavior.
 
 This is scoped to the sign translation probe described in the request. Other
-installed mods can still resolve their own probe keys. Movement checks and other
-anti-cheat mechanisms are outside this patch's scope.
+installed mods can still resolve their own probe keys. The movement correction
+normalizes diagonal input and leaves sneak slowdown to Minecraft, matching its
+keyboard input path. Other anti-cheat checks have not been verified.
 
 An important correction to the supplied explanation: the official Baritone
 v1.20.0 Fabric JAR has **no `assets/*/lang/*` files**, and its source does not
@@ -49,17 +50,39 @@ resource, which alone is not proof that the corresponding mod is installed.
 - Passed 38 assertions against a small component fixture, including a populated
   Baritone translation table, cached results, nesting, custom fallbacks, ordinary
   translations, a custom forward-key value, and translation placeholders.
-- Checked archive integrity and verified that the only changed upstream files
-  are Fabric metadata and the mixin configuration. Four compiled classes are added.
+- Passed 123 assertions using real Minecraft components and the actual candidate.
+- Compared the candidate's optimized movement class with real Minecraft
+  KeyboardInput/Vec2/Input for all 128 key combinations; all match. The source
+  regression check also passes all 128 combinations.
+- Applied the candidate through cached Fabric/Knot and Mixin 0.8.7; the actual sign
+  constructor contains exactly one redirect and no unredirected conversion.
+- Executed the real transformed editor constructor/removal and sign-update packet
+  codec for 100 cases covering both sides, distinct filtered/unfiltered text, and
+  changing fallbacks. All return the supplied fallback and normal keybind control.
+- Repeated all 100 cases with the official unpatched release: the local translation
+  appears in the outgoing packet, establishing a positive control.
+- Initialized the real Baritone API, core pathing/input processes, and the
+  help/goto/stop/mine/build/follow command registrations in the headless runtime.
+- Compiled the included mixin source against the real game and Mixin API.
+- Checked archive integrity: only the movement class, Fabric metadata, and mixin
+  configuration change. Four classes are added; bundled libraries are unchanged.
 
 Compilation and fixture execution used an offline bubblewrap sandbox with a
 read-only source/toolchain, empty environment, scratch-local home/cache/tmp,
 128 MiB writable tmpfs, 1 GiB memory limit, 64-task limit, two-CPU quota, 90-second
 CPU limit, 120-second wall timeout, 32 MiB per-file limit, and 128 open-file limit.
 
-**Minecraft launch, runtime Mixin application, pathfinding, and an actual
-CheckHacks packet round trip have not been tested. This is a built candidate,
-not a claim of a verified complete anti-cheat bypass.**
+The real-runtime checks use verified cached game libraries, a 256 MiB scratch
+tmpfs, 2 GiB memory limit, 96-task limit, two-CPU quota, 90-second CPU limit,
+120-second wall timeout, 32 MiB per-file limit, and 256 open-file limit. They create
+minimal client control objects without graphics or an account, and capture
+outgoing packets before transport. They do not contact a server.
+
+**The cached Fabric loader is 0.19.3. Runtime tests use an explicit dependency
+override confined to the scratch test directory; the candidate remains unchanged
+and requires Fabric 0.19.5+. A supported-loader full game launch, in-world
+pathfinding, and an actual CheckHacks/server scan remain unverified. This is not a
+verified complete anti-cheat bypass.**
 
 ## Validate on your server
 
@@ -83,7 +106,7 @@ Use a local/test instance and check the Baritone definition explicitly:
 5. Check `#help`, run `#goto` to a nearby safe coordinate in your test world, and
    use `#stop`. This checks that Baritone still operates in your installed setup.
 
-These are expected results from source inspection and fixture tests. Keep your
+These server results are expectations supported by the local runtime tests. Keep your
 observed server log/results when doing the in-game validation. The test pack is
 deliberately detectable and should be removed after this comparison.
 
@@ -104,6 +127,22 @@ The host needs Python 3, bubblewrap, util-linux `prlimit`, and a user systemd
 session supporting the resource controls above. There is no network access in
 the compiler/test sandbox. The normal Gradle source also contains the same
 helper and mixin registration; a complete Gradle rebuild was not performed.
+
+Run the real-runtime tests with already cached Linux launcher libraries:
+
+```sh
+python3 scripts/compatibility/test_runtime.py \
+  --minecraft /path/to/minecraft-26.3.jar \
+  --metadata /path/to/26.3.json \
+  --candidate dist/baritone-api-fabric-1.20.0-compat.1.jar \
+  --libraries /path/to/launcher/meta/libraries \
+  --fabric-runtime \
+  --upstream-control /path/to/baritone-api-fabric-1.20.0.jar
+```
+
+The optional Fabric checks pin the cached loader 0.19.3, Mixin 0.8.7, and ASM
+9.10.1 hashes. They never install dependencies or alter your launcher profile.
+Without `--fabric-runtime`, only the actual-component and actual-input checks run.
 
 The builder also generates the positive-control test resource pack, installation
 guide, and complete source archive. The source archive contains Baritone v1.20.0
