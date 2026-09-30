@@ -2,6 +2,10 @@
 
 Target: **Minecraft 26.3, Fabric Loader 0.19.5 or later, Java 25 or later**.
 
+Further compatibility work is recorded in `docs/anticheat-compatibility.md`.
+The movement input correction described there is source-only and is not included
+in this sign-only overlay JAR.
+
 The installable JAR is `dist/baritone-api-fabric-1.20.0-signprivacy.1.jar`.
 Replace the existing Baritone JAR in the instance's `mods` directory with this file.
 Restart Minecraft, and run `#help` to confirm Baritone loads. Only one Baritone JAR

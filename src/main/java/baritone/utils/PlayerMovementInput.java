@@ -56,11 +56,9 @@ public class PlayerMovementInput extends ClientInput {
         }
 
         boolean sneaking = handler.isInputForcedDown(Input.SNEAK);
-        if (sneaking) {
-            leftImpulse *= 0.3D;
-            forwardImpulse *= 0.3D;
-        }
-        this.moveVector = new Vec2(leftImpulse, forwardImpulse);
+        // Match KeyboardInput: normalize diagonals here. LocalPlayer applies the
+        // attribute-based sneak slowdown later; scaling here would apply it twice.
+        this.moveVector = new Vec2(leftImpulse, forwardImpulse).normalized();
 
         boolean sprinting = handler.isInputForcedDown(Input.SPRINT);
 
