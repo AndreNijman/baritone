@@ -150,9 +150,10 @@ opponents are experimental choices, not claims about his server's hidden stack.
 
 A fresh Minecraft 26.3/Fabric 0.19.5 client now joins the disposable Paper server,
 with the positive-control translation pack enabled, and completes a normal
-diagonal Baritone goal. Both stock and patched builds complete the conservative, balanced, and strict
-profile paths without movement flags in these limited trials. No measured movement flag
-reduction is claimed for this path.
+diagonal Baritone goal. Both stock and patched builds complete the conservative,
+balanced, and strict profile paths. The primary strict patched trial emits Timer
+and TimerLimit flags after joining, before its goal starts; the other five normal
+primary trials emit no flags. No measured movement flag reduction is claimed.
 
 Public CheckHacks 1.3.1 initially returns `PROTECTED` for both variants because its
 reflection code still requests the removed `(BlockPos, boolean)` open-sign packet
