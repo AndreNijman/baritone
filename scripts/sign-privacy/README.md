@@ -1,16 +1,17 @@
-# Baritone 1.20.0: sign privacy, movement and mining compatibility
+# Baritone 1.20.0: sign privacy, movement, mining and gradual aiming
 
 Target: **Minecraft 26.3, Fabric Loader 0.19.5 or later, Java 25 or later**.
 
 The candidate includes the sign privacy patch and the Minecraft 26.3 keyboard
 input and mining corrections described in `docs/anticheat-compatibility.md`.
 
-The installable JAR is `dist/baritone-api-fabric-1.20.0-compat.2.jar`.
+The installable JAR is `dist/baritone-api-fabric-1.20.0-compat.3.jar`.
 Replace the existing Baritone JAR in the instance's `mods` directory with this file.
 Restart Minecraft, and run `#help` to confirm Baritone loads. Only one Baritone JAR
 should be installed. This is the API release with its normal commands and bundled
-nether pathfinder. The movement and mining classes are replaced; every other original
-class and nested JAR is preserved byte for byte.
+nether pathfinder. Eight original classes are changed: input, mining, core initialization, look behavior,
+both aim processors, geometric reachability and its API. Six classes are added.
+Every other original class and nested JAR is preserved byte for byte.
 
 ## What the patch does
 
@@ -29,7 +30,11 @@ normalizes diagonal input and leaves sneak slowdown to Minecraft, matching its
 keyboard input path. Mining now sends Minecraft 26.3’s normal `Punch` packet
 after each mining swing and uses the held item’s attack animation. The game
 controller still determines mining progress and block destruction. Other
-anti-cheat checks have not been fully verified.
+anti-cheat checks have not been fully verified. Gradual ground aiming applies
+12-degree yaw and 8-degree pitch caps per tick before normal rotation transmission.
+It eases toward the target using actual mouse-sensitivity increments. Mining waits
+until the current view ray matches the intended block. This bounds abrupt motion;
+it does not establish human-like behavior against observers or classifiers.
 
 An important correction to the supplied explanation: the official Baritone
 v1.20.0 Fabric JAR has **no `assets/*/lang/*` files**, and its source does not
@@ -69,13 +74,19 @@ resource, which alone is not proof that the corresponding mod is installed.
 - Initialized the real Baritone API, core pathing/input processes, and the
   help/goto/stop/mine/build/follow command registrations in the headless runtime.
 - Compiled the included mixin source against the real game and Mixin API.
-- Checked archive integrity: only the movement/mining classes, Fabric metadata, and mixin
-  configuration change. Four classes are added; bundled libraries are unchanged.
+- Checked archive integrity: eight original classes and two metadata files change.
+  Six classes are added; bundled libraries are unchanged.
+- Passed 50,202 geometry assertions covering wraparound, angle caps, pitch limits,
+  mouse-sensitivity increments, convergence and disabling the controller.
+- Compiled the changed reachability API independently of the new main implementation.
+- Tested pure live peeks, isolated fork progression, and an unlimited geometric
+  endpoint in the rendered game. Reachability after turning is distinct from
+  permission to break at the current angle.
 
 Compilation and fixture execution used an offline bubblewrap sandbox with a
 read-only source/toolchain, empty environment, scratch-local home/cache/tmp,
 128 MiB writable tmpfs, 1 GiB memory limit, 64-task limit, two-CPU quota, 90-second
-CPU limit, 120-second wall timeout, 32 MiB per-file limit, and 128 open-file limit.
+CPU limit, 120-second wall timeout, 32 MiB per-file limit, and 256 open-file limit.
 
 The real-runtime checks use verified cached game libraries, a 256 MiB scratch
 tmpfs, 2 GiB memory limit, 96-task limit, two-CPU quota, 90-second CPU limit,
@@ -104,6 +115,39 @@ or flags. This is a test rule, not a claim about the private server. Startup tim
 flags remain in some ordinary profiles; the conservative trial also has a startup
 BadPacketsR flag. Full details are in `docs/anticheat-compatibility.md` and the
 separate clean-room report. The private server's exact rejection remains unknown.
+
+## Gradual ground aiming (compat.3)
+
+The controller is enabled on restart. Run `#gradual status`, `#gradual on`, or
+`#gradual off`. Enabling it applies these settings:
+
+```text
+freeLook false
+blockFreeLook false
+smoothLook false
+walkWhileBreaking false
+allowSprint false
+allowParkour false
+```
+
+This keeps the camera aligned with transmitted rotations and makes breaking
+stationary. Turning the controller off leaves those settings as currently
+configured; it does not restore earlier settings. The toggle is session-only.
+Elytra flight retains its ordinary processor behavior. Other settings can still
+be changed normally, so overriding these presets changes the tested behavior.
+
+Both live and forked aim predictors use the bounded next-tick step. The live
+predictor holds the pre-turn rotation for the whole tick, preventing movement
+calculations from accidentally taking a second step. Geometric reachability
+uses a separate pure endpoint so a reachable block is not discarded merely
+because turning takes several ticks. Breaking uses the current view ray and
+normal controller progression/abort packets.
+
+The clean-room gameplay report is
+`../andre-anticheat/reports/2026-10-01-gradual-look.md` relative to the project root.
+It records received rotation measurements, path completion, mining cases,
+failed prototypes and remaining flags. There is no human-observer study and no
+proof against the undisclosed private stack.
 
 ## Validate on your server
 
@@ -141,7 +185,9 @@ python3 scripts/sign-privacy/build_overlay.py \
   --upstream /path/to/baritone-api-fabric-1.20.0.jar \
   --minecraft /path/to/minecraft-26.3.jar \
   --asm /path/to/asm-9.9.jar \
-  --jdk /usr/lib/jvm/java-27
+  --jdk /usr/lib/jvm/java-27 \
+  --metadata /path/to/26.3.json \
+  --libraries /path/to/launcher/meta/libraries
 ```
 
 The host needs Python 3, bubblewrap, util-linux `prlimit`, and a user systemd
@@ -155,7 +201,7 @@ Run the real-runtime tests with already cached Linux launcher libraries:
 python3 scripts/compatibility/test_runtime.py \
   --minecraft /path/to/minecraft-26.3.jar \
   --metadata /path/to/26.3.json \
-  --candidate dist/baritone-api-fabric-1.20.0-compat.2.jar \
+  --candidate dist/baritone-api-fabric-1.20.0-compat.3.jar \
   --libraries /path/to/launcher/meta/libraries \
   --fabric-runtime \
   --upstream-control /path/to/baritone-api-fabric-1.20.0.jar

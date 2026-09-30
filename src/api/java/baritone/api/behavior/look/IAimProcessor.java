@@ -36,6 +36,14 @@ public interface IAimProcessor {
     Rotation peekRotation(Rotation desired);
 
     /**
+     * Pure geometric endpoint used to ask whether a block is reachable after turning.
+     * Controllers that limit per-tick turns may override this separately from the next-tick predictor.
+     */
+    default Rotation peekRotationForReachability(Rotation desired) {
+        return peekRotation(desired);
+    }
+
+    /**
      * Returns a copy of this {@link IAimProcessor} which has its own internal state and is manually tickable.
      *
      * @return The forked processor

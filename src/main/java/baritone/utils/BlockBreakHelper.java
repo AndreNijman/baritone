@@ -58,6 +58,7 @@ public final class BlockBreakHelper {
         HitResult trace = ctx.objectMouseOver();
         boolean isBlockTrace = trace != null && trace.getType() == HitResult.Type.BLOCK;
 
+        isLeftClick = GradualLook.allowMining(isLeftClick, ctx, wasHitting);
         if (isLeftClick && isBlockTrace) {
             ctx.playerController().setHittingBlock(wasHitting);
             if (ctx.playerController().hasBrokenBlock()) {

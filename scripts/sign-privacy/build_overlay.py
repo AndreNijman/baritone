@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 UPSTREAM_SHA256 = "49adfc063cfbfd0b6f08e9d814359807baa2d1768c0d39d6c5968268547cbca6"
 MINECRAFT_SHA1 = "e877b6a07acd633fb3bb475002175cec036e7b87"
-VERSION = "1.20.0+compat.2"
+VERSION = "1.20.0+compat.3"
 CLASSES = [
     "baritone/launch/privacy/SignTextPrivacy.class",
     "baritone/launch/privacy/SignTextPrivacy$Api.class",
@@ -19,6 +19,14 @@ CLASSES = [
     "baritone/launch/mixins/MixinSignEditScreen.class",
     "baritone/fp.class",
     "baritone/fj.class",
+    "baritone/a.class",
+    "baritone/f.class",
+    "baritone/f$a.class",
+    "baritone/f$b.class",
+    "baritone/api/utils/RotationUtils.class",
+    "baritone/api/behavior/look/IAimProcessor.class",
+    "baritone/utils/GradualLook.class",
+    "baritone/utils/GradualLookCommand.class",
 ]
 
 
@@ -28,22 +36,39 @@ def main():
     parser.add_argument("--minecraft", type=Path, required=True)
     parser.add_argument("--asm", type=Path, required=True, help="Existing ASM 9.9 JAR")
     parser.add_argument("--jdk", type=Path, default=Path("/usr/lib/jvm/java-27"))
+    parser.add_argument("--libraries", type=Path, default=Path("/var/home/andre/.var/app/com.modrinth.ModrinthApp/data/ModrinthApp/meta/libraries"))
+    parser.add_argument("--metadata", type=Path, default=ROOT / ".validation/inputs/26.3.json")
     options = parser.parse_args()
     assert hashlib.sha256(options.upstream.read_bytes()).hexdigest() == UPSTREAM_SHA256, "Wrong upstream release"
     assert hashlib.sha1(options.minecraft.read_bytes()).hexdigest() == MINECRAFT_SHA1, "Wrong Minecraft 26.3 client"
     jdk = options.jdk.resolve()
     if not jdk.is_relative_to("/usr"):
         parser.error("This sandbox expects an existing JDK under /usr")
+    metadata = json.loads(options.metadata.read_text())
+    assert metadata["downloads"]["client"]["sha1"] == MINECRAFT_SHA1
+    dependencies = []
+    for lib in metadata["libraries"]:
+        artifact = lib.get("downloads", {}).get("artifact")
+        if not artifact: continue
+        if "-natives-" in artifact["path"]: continue
+        relative = Path(artifact["path"])
+        assert not relative.is_absolute() and ".." not in relative.parts
+        path = options.libraries / relative
+        if not path.is_file(): continue
+        assert hashlib.sha1(path.read_bytes()).hexdigest() == artifact["sha1"], "Changed game library"
+        dependencies.append("/libraries/" + artifact["path"])
     shell = r'''
 set -eu
 mkdir -p /scratch/home /scratch/tmp /scratch/classes /scratch/tools /scratch/tests
 JAVAC_FLAGS='-J-Xmx256m -J-XX:CompressedClassSpaceSize=64m -J-XX:ReservedCodeCacheSize=64m -J-XX:ActiveProcessorCount=2'
 JAVA_FLAGS='-Xmx256m -XX:CompressedClassSpaceSize=64m -XX:ReservedCodeCacheSize=64m -XX:ActiveProcessorCount=2'
 "$PATCH_JDK/bin/javac" $JAVAC_FLAGS --release 25 -d /scratch/classes /source/src/launch/java/baritone/launch/privacy/SignTextPrivacy.java
-"$PATCH_JDK/bin/javac" $JAVAC_FLAGS --release 17 -cp /deps/asm.jar -d /scratch/tools /source/scripts/sign-privacy/GenerateMixin.java /source/scripts/compatibility/PatchMovementInput.java /source/scripts/compatibility/PatchMining.java
+"$PATCH_JDK/bin/javac" $JAVAC_FLAGS --release 17 -cp /deps/asm.jar -d /scratch/tools /source/scripts/sign-privacy/GenerateMixin.java /source/scripts/compatibility/PatchMovementInput.java /source/scripts/compatibility/PatchMining.java /source/scripts/compatibility/PatchGradualLook.java
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar GenerateMixin /inputs/minecraft.jar /scratch/classes
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar PatchMovementInput /inputs/upstream.jar /scratch/classes
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar PatchMining /inputs/upstream.jar /scratch/classes
+"$PATCH_JDK/bin/javac" $JAVAC_FLAGS -proc:none --release 25 -cp "$LOOK_CP" -d /scratch/classes /source/src/main/java/baritone/utils/GradualLook.java /source/src/main/java/baritone/utils/GradualLookCommand.java
+"$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar PatchGradualLook /inputs/upstream.jar /scratch/classes
 "$PATCH_JDK/bin/javac" $JAVAC_FLAGS --release 25 -cp /scratch/classes -d /scratch/tests $(find /source/scripts/sign-privacy/fixture -name '*.java')
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tests:/scratch/classes baritone.launch.privacy.SignTextPrivacyTest
 /usr/bin/python3 - <<'PY'
@@ -57,15 +82,17 @@ PY
     command = [
         "systemd-run", "--user", "--scope", "--quiet", "--collect",
         "-p", "MemoryMax=1073741824", "-p", "TasksMax=64", "-p", "CPUQuota=200%",
-        "prlimit", "--as=4294967296", "--cpu=90", "--fsize=33554432", "--nofile=128", "--core=0", "--",
+        "prlimit", "--as=4294967296", "--cpu=90", "--fsize=33554432", "--nofile=256", "--core=0", "--",
         "bwrap", "--unshare-all", "--new-session", "--die-with-parent", "--clearenv",
         "--ro-bind", "/usr", "/usr", "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib64", "/lib64",
         "--ro-bind", str(ROOT), "/source",
         "--ro-bind", str(options.minecraft.resolve()), "/inputs/minecraft.jar",
         "--ro-bind", str(options.upstream.resolve()), "/inputs/upstream.jar",
         "--ro-bind", str(options.asm.resolve()), "/deps/asm.jar",
+        "--ro-bind", str(options.libraries.resolve()), "/libraries",
         "--proc", "/proc", "--dev", "/dev", "--size", "134217728", "--tmpfs", "/scratch",
         "--chdir", "/scratch", "--setenv", "HOME", "/scratch/home", "--setenv", "TMPDIR", "/scratch/tmp",
+        "--setenv", "LOOK_CP", ":".join(["/inputs/minecraft.jar", "/inputs/upstream.jar", *dependencies]),
         "--setenv", "PATH", "/usr/bin", "--setenv", "PATCH_JDK", str(jdk), "/usr/bin/bash", "-c", shell,
     ]
     completed = subprocess.run(command, capture_output=True, text=True, timeout=120)
@@ -81,7 +108,7 @@ PY
         if not line.startswith("BUILD_CLASSES="):
             print(line)
 
-    destination = ROOT / "dist" / "baritone-api-fabric-1.20.0-compat.2.jar"
+    destination = ROOT / "dist" / "baritone-api-fabric-1.20.0-compat.3.jar"
     destination.parent.mkdir(exist_ok=True)
     with zipfile.ZipFile(options.upstream) as original, zipfile.ZipFile(destination, "w") as patched:
         assert not any(name.upper().endswith((".SF", ".RSA", ".DSA")) for name in original.namelist()), "Signed input requires separate handling"
@@ -98,6 +125,7 @@ PY
                 config["version"] = VERSION
                 config["custom"]["signprivacy"] = {"scope": "baritone.* translations in editable sign text", "upstream_sha256": UPSTREAM_SHA256}
                 config["custom"]["movementcompatibility"] = "Minecraft 26.3 keyboard vector normalization and sneak slowdown"
+                config["custom"]["gradualgroundaim"] = "12 degree yaw / 8 degree pitch caps, shared fork/live processor and matching-view mining"
                 config["custom"]["miningcompatibility"] = "Minecraft 26.3 normal Punch packets and held-item swing animation"
                 data = (json.dumps(config, indent=2) + "\n").encode()
             patched.writestr(entry, data)
@@ -110,9 +138,9 @@ PY
 
     with zipfile.ZipFile(options.upstream) as original, zipfile.ZipFile(destination) as patched:
         assert patched.testzip() is None
-        assert set(patched.namelist()) - set(original.namelist()) == set(CLASSES) - {"baritone/fp.class", "baritone/fj.class"}
+        assert set(patched.namelist()) - set(original.namelist()) == set(CLASSES) - {"baritone/fp.class", "baritone/fj.class", "baritone/a.class", "baritone/f.class", "baritone/f$a.class", "baritone/f$b.class", "baritone/api/utils/RotationUtils.class", "baritone/api/behavior/look/IAimProcessor.class"}
         changed = {name for name in original.namelist() if original.read(name) != patched.read(name)}
-        assert changed == {"mixins.baritone.json", "fabric.mod.json", "baritone/fp.class", "baritone/fj.class"}
+        assert changed == {"mixins.baritone.json", "fabric.mod.json", "baritone/fp.class", "baritone/fj.class", "baritone/a.class", "baritone/f.class", "baritone/f$a.class", "baritone/f$b.class", "baritone/api/utils/RotationUtils.class", "baritone/api/behavior/look/IAimProcessor.class"}
         assert not any("/lang/" in name for name in original.namelist())
     checksum = hashlib.sha256(destination.read_bytes()).hexdigest()
     destination.with_suffix(".jar.sha256").write_text(f"{checksum}  {destination.name}\n")
@@ -134,7 +162,8 @@ PY
     for directory in ("scripts/sign-privacy", "scripts/compatibility", "src/launch/java/baritone/launch/privacy"):
         source_files.update(str(path.relative_to(ROOT)) for path in (ROOT / directory).rglob("*") if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc")
     source_files.add("src/launch/java/baritone/launch/mixins/MixinSignEditScreen.java")
-    source_archive = destination.parent / "baritone-1.20.0-compat.2-source.zip"
+    source_files.update(["src/main/java/baritone/utils/GradualLook.java", "src/main/java/baritone/utils/GradualLookCommand.java"])
+    source_archive = destination.parent / "baritone-1.20.0-compat.3-source.zip"
     with zipfile.ZipFile(source_archive, "w") as archive:
         for name in sorted(source_files):
             path = ROOT / name
@@ -148,7 +177,7 @@ PY
         with zipfile.ZipFile(artifact) as archive:
             assert archive.testzip() is None
     print("Minecraft constructor: exactly one matching Component.getString call")
-    print("JAR verified: only movement/mining classes and two metadata files changed; four new classes; bundled libraries unchanged")
+    print("JAR verified: only eight original classes and two metadata files changed; six new classes; bundled libraries unchanged")
     print(f"Output: {destination}\nSHA-256: {checksum}")
     print(f"Test pack: {test_pack}\nComplete source: {source_archive}")
 

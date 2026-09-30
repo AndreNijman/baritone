@@ -235,3 +235,63 @@ in that profile's `.codex-backups/mining-compat.2/`, outside `mods`. The mods fo
 has one Baritone JAR. The Vanilla profile was not changed. Private server settings
 were not inspected. NAS memory calls currently return internal errors; this
 repository and the clean-room reports preserve the checkpoint.
+
+## Gradual ground aiming — 2026-10-01 (compat.3)
+
+The new ground controller limits transmitted yaw to 12 degrees and pitch to
+8 degrees per tick, easing toward a target in actual mouse-sensitivity increments.
+It uses the same pure next-tick step for live and forked processors. The live
+processor snapshots the pre-turn view once per tick so later movement queries
+cannot take a second turn step. Both settings and camera are aligned with those
+transmitted rotations: freeLook, blockFreeLook, smoothLook, walkWhileBreaking,
+allowSprint and allowParkour are set false when enabling the controller.
+
+`#gradual on`, `#gradual off`, and `#gradual status` control this session-only mode.
+It defaults on at restart. Turning it off leaves the current settings in place.
+Users can override those presets through normal settings commands, which changes
+the tested behavior. The rotation limiter bypasses Elytra flight.
+
+Mining waits for the actual current view ray to hit the same block as the intended
+interaction ray. Interrupted digging is aborted through the normal game controller.
+Geometric reachability is a separate pure endpoint: a block can be reachable after
+turning even if it cannot be targeted next tick. The API gains the backward-compatible
+`IAimProcessor.peekRotationForReachability` default method, avoiding a dependency
+from the API source set into main implementation classes.
+
+The initial prototype exposed both a reachability regression (two of nine blocks
+mined) and a SprintE flag while turning. It was not installed. Separating eventual
+reachability from the next-tick predictor, freezing live prediction for the tick,
+and disabling sprint/parkour resolved the tested baseline regression. The measured
+strict baseline removes nine of nine blocks with no restorations and no logged
+flags; server-received steps are at most 11.85 yaw and 7.95 pitch degrees at the
+test sensitivity. Ordinary diagonal pathfinding also completes.
+
+The final JAR's runtime suite passes 50,202 geometry assertions, 123 real-component
+assertions, all 128 actual input combinations, supported Fabric 0.19.5 initialization,
+and 100 patched plus 100 unpatched sign-editor/packet-codec round trips. Changed
+reachability API sources compile against the original API and game without the new
+main helper. A complete Gradle rebuild remains unperformed.
+
+Broader gameplay cases and the actual artifact hashes are preserved in the separate
+`/var/home/andre/Projects/andre-anticheat/reports/2026-10-01-gradual-look.md` report.
+Some startup Timer/TimerLimit flags remain unresolved. Deterministic easing can itself
+be recognizable. No human-observer study, classifier benchmark, proxy coverage,
+placement/inventory coverage, or universal anti-cheat bypass is established.
+
+Final compat.3 SHA-256:
+`5ad28b14f2779bb5fc11397c824372f544517592b48054c8460d9a3a78c310b8`.
+The final baseline, wooden-pickaxe, Mining Fatigue I and longer obsidian repeats
+all remove nine blocks with zero restorations. The final normal diagonal goal
+also arrives. Startup Timer/TimerLimit flags remain in the baseline/path repeats.
+The installed compat.2 comparison has an observed maximum pitch step of 86.55
+versus 7.95 degrees in the gradual mining trials. Measurement windows start
+asynchronously after the test phase request; they do not cover every join,
+teleport or user-controlled rotation.
+
+Compat.3 is installed in Modrinth's **Fabric 26.3** profile, after verifying no
+Java process used it and that the old JAR matched its known hash. Compat.2 is
+preserved in `.codex-backups/gradual-compat.3/`, outside `mods`. Exactly one standalone
+Baritone JAR remains. Restart the instance and use `#gradual status` to confirm
+this build. Complete source and reproducible offline overlay tooling are preserved.
+NAS memory reads currently return internal errors; this document and the tracked
+benchmark report preserve the local checkpoint.

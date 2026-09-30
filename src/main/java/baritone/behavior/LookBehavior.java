@@ -18,6 +18,7 @@
 package baritone.behavior;
 
 import baritone.Baritone;
+import baritone.utils.GradualLook;
 import baritone.api.Settings;
 import baritone.api.behavior.ILookBehavior;
 import baritone.api.behavior.look.IAimProcessor;
@@ -65,6 +66,7 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
 
     @Override
     public void updateTarget(Rotation rotation, boolean blockInteract) {
+        GradualLook.request(ctx, rotation, blockInteract);
         this.target = new Target(rotation, Target.Mode.resolve(ctx, blockInteract));
     }
 
@@ -76,6 +78,7 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
     @Override
     public void onTick(TickEvent event) {
         if (event.getType() == TickEvent.Type.IN) {
+            GradualLook.beginTick(ctx);
             this.processor.tick();
         }
     }
@@ -147,6 +150,7 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
 
     @Override
     public void onWorldEvent(WorldEvent event) {
+        GradualLook.clear(ctx);
         this.serverRotation = null;
         this.target = null;
     }
@@ -184,7 +188,7 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
         @Override
         protected Rotation getPrevRotation() {
             // Implementation will use LookBehavior.serverRotation
-            return ctx.playerRotations();
+            return GradualLook.previous(ctx.playerRotations(), ctx);
         }
     }
 
@@ -208,6 +212,11 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
         }
 
         @Override
+        public final Rotation peekRotationForReachability(final Rotation rotation) {
+            return GradualLook.reachableRotation(this, rotation, ctx);
+        }
+
+        @Override
         public final Rotation peekRotation(final Rotation rotation) {
             final Rotation prev = this.getPrevRotation();
 
@@ -223,10 +232,10 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
             desiredYaw += this.randomYawOffset;
             desiredPitch += this.randomPitchOffset;
 
-            return new Rotation(
+            return GradualLook.limit(new Rotation(
                     this.calculateMouseMove(prev.getYaw(), desiredYaw),
                     this.calculateMouseMove(prev.getPitch(), desiredPitch)
-            ).clamp();
+            ).clamp(), prev, ctx);
         }
 
         @Override
