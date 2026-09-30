@@ -25,7 +25,8 @@ def main():
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--upstream-control", type=Path, help="Pinned official Baritone release for positive-control sign round trips")
     parser.add_argument("--libraries", type=Path, required=True)
-    parser.add_argument("--fabric-runtime", action="store_true", help="Also check the Mixin with cached loader 0.19.3 and an explicit scratch-only dependency override")
+    parser.add_argument("--fabric-loader", type=Path, help="Verified supported Fabric 0.19.5 JAR; otherwise use the cached 0.19.3 test override")
+    parser.add_argument("--fabric-runtime", action="store_true", help="Also check the Mixin using --fabric-loader or the explicit cached-loader test override")
     parser.add_argument("--jdk", type=Path, default=Path("/usr/lib/jvm/java-27"))
     options = parser.parse_args()
     if not options.jdk.resolve().is_relative_to("/usr"):
@@ -55,8 +56,20 @@ def main():
         dependencies.append("/libraries/" + artifact["path"])
     classpath = ":".join(["/inputs/minecraft.jar", "/inputs/candidate.jar", *dependencies])
     fabric_dependencies = []
+    loader_mount = []
+    loader_version = "0.19.3"
+    if options.fabric_loader:
+        if not options.fabric_runtime:
+            parser.error("--fabric-loader requires --fabric-runtime")
+        if hashlib.sha256(options.fabric_loader.read_bytes()).hexdigest() != "93044e4dd46de5d8136701292f05e868da096d2c9fddb4793e4fdbcc63efc695":
+            parser.error("Wrong supported Fabric 0.19.5 loader")
+        loader_version = "0.19.5"
+        loader_mount = ["--ro-bind", str(options.fabric_loader.resolve()), "/deps/fabric-loader.jar"]
+        fabric_dependencies.append("/deps/fabric-loader.jar")
     if options.fabric_runtime:
         for name, checksum in FABRIC_CACHE.items():
+            if options.fabric_loader and name.startswith("net/fabricmc/fabric-loader/"):
+                continue
             path = options.libraries / name
             if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != checksum:
                 parser.error("Missing or changed cached Fabric tool: " + name)
@@ -72,6 +85,7 @@ echo '127.0.0.1 localhost' > /scratch/etc/hosts
     if options.fabric_runtime:
         shell += r'''
 cp /inputs/candidate.jar /scratch/game/mods/baritone.jar
+if [ "$PATCH_LOADER" = "0.19.3" ]; then
 python3 - <<'PY'
 import json, zipfile
 from pathlib import Path
@@ -81,6 +95,7 @@ dependencies = metadata['depends']
 dependencies['fabricloader'] = '>=0.19.3'
 Path('/scratch/game/config/fabric_loader_dependencies.json').write_text(json.dumps({'version': 1, 'overrides': {metadata['id']: {'depends': dependencies}}}))
 PY
+fi
 "$PATCH_JDK/bin/javac" -J-Xmx256m --release 25 -cp "$PATCH_CP:$PATCH_FABRIC_CP" -d /scratch/launcher /source/scripts/compatibility/KnotSmokeTest.java
 "$PATCH_JDK/bin/javac" -J-Xmx256m --release 25 -cp "$PATCH_CP:$PATCH_FABRIC_CP" -d /scratch/source-check /source/src/launch/java/baritone/launch/mixins/MixinSignEditScreen.java
 "$PATCH_JDK/bin/javac" -J-Xmx256m --release 25 -cp "$PATCH_CP" -d /scratch/game-tests /source/scripts/compatibility/SignRoundTripTest.java
@@ -102,10 +117,10 @@ cp /inputs/control.jar /scratch/game/mods/baritone.jar
         "--ro-bind", "/etc/pki/ca-trust/extracted", "/etc/pki/ca-trust/extracted",
         "--ro-bind", str(ROOT), "/source", "--ro-bind", str(options.libraries.resolve()), "/libraries",
         "--ro-bind", str(options.minecraft.resolve()), "/inputs/minecraft.jar", "--ro-bind", str(options.candidate.resolve()), "/inputs/candidate.jar",
-        *control_mount,
+        *control_mount, *loader_mount,
         "--proc", "/proc", "--dev", "/dev", "--size", "268435456", "--tmpfs", "/scratch", "--chdir", "/scratch",
         "--setenv", "HOME", "/scratch/home", "--setenv", "TMPDIR", "/scratch/tmp", "--setenv", "PATH", "/usr/bin",
-        "--setenv", "PATCH_CP", classpath, "--setenv", "PATCH_GAME_CP", ":".join(["/inputs/minecraft.jar", *dependencies]),
+        "--setenv", "PATCH_LOADER", loader_version, "--setenv", "PATCH_CP", classpath, "--setenv", "PATCH_GAME_CP", ":".join(["/inputs/minecraft.jar", *dependencies]),
         "--setenv", "PATCH_FABRIC_CP", ":".join(fabric_dependencies), "--setenv", "PATCH_JDK", str(options.jdk.resolve()), "/usr/bin/bash", "-c", shell]
     result = subprocess.run(command, capture_output=True, text=True, timeout=120)
     print(result.stdout, end=""); print(result.stderr, end="")

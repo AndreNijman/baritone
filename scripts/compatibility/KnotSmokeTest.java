@@ -35,7 +35,8 @@ public final class KnotSmokeTest {
         }, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
         if (calls[0] != 1 || calls[1] != 0) throw new AssertionError("Redirect calls=" + calls[0] + ", unredirected conversions=" + calls[1]);
         System.out.println("Fabric/Mixin runtime: actual sign constructor has exactly one redirect and no original conversion");
-        System.out.println("Test-only loader dependency override: cached Fabric 0.19.3; installation still requires 0.19.5+");
+        String version = net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("fabricloader").orElseThrow().getMetadata().getVersion().getFriendlyString();
+        System.out.println(version.equals("0.19.3") ? "Test-only loader dependency override: cached Fabric 0.19.3; installation still requires 0.19.5+" : "Supported Fabric loader " + version + "; no dependency override");
         knot.addToClassPath(Path.of("/scratch/game-tests"));
         target.loadClass("SignRoundTripTest").getMethod("main", String[].class).invoke(null, (Object) new String[0]);
     }

@@ -78,11 +78,11 @@ tmpfs, 2 GiB memory limit, 96-task limit, two-CPU quota, 90-second CPU limit,
 minimal client control objects without graphics or an account, and capture
 outgoing packets before transport. They do not contact a server.
 
-**The cached Fabric loader is 0.19.3. Runtime tests use an explicit dependency
-override confined to the scratch test directory; the candidate remains unchanged
-and requires Fabric 0.19.5+. A supported-loader full game launch, in-world
-pathfinding, and an actual CheckHacks/server scan remain unverified. This is not a
-verified complete anti-cheat bypass.**
+**The complete component/input/Mixin/packet-codec suite also passes with official
+Fabric 0.19.5 and no dependency override. The earlier 0.19.3 cache checks used a
+scratch-only override; the artifact has always required 0.19.5+. Full game and
+server gameplay validation is tracked separately in the clean-room benchmark
+project. These unit/runtime checks do not establish a complete anti-cheat bypass.**
 
 ## Validate on your server
 
@@ -140,8 +140,11 @@ python3 scripts/compatibility/test_runtime.py \
   --upstream-control /path/to/baritone-api-fabric-1.20.0.jar
 ```
 
-The optional Fabric checks pin the cached loader 0.19.3, Mixin 0.8.7, and ASM
-9.10.1 hashes. They never install dependencies or alter your launcher profile.
+The optional Fabric checks pin Mixin 0.8.7 and ASM 9.10.1 hashes. Supply
+`--fabric-loader /path/to/fabric-loader-0.19.5.jar` to use the verified supported
+loader without an override. Without this argument they use the cached 0.19.3
+loader with an explicit scratch-only override. They never alter your launcher
+profile or fetch dependencies during execution.
 Without `--fabric-runtime`, only the actual-component and actual-input checks run.
 
 The builder also generates the positive-control test resource pack, installation

@@ -1,11 +1,10 @@
 # Anti-cheat compatibility work — 2026-09-30
 
 Andre authorized committing/pushing the sign privacy patch and starting further
-work against the anti-cheats on his own server. The plugin names, exact builds,
-configuration, flag logs, backend/proxy topology, and installed client mods are
-not yet available. DonutSMP production parity has not been established. This is
-an initial compatibility investigation, not a comprehensive security audit or a
-verified universal bypass.
+work against the anti-cheats on his own server. The active test scope is now blind and clean-room: do not inspect or request
+Andre's private server, plugin list, or configurations. Published Paper, Grim,
+and CheckHacks builds are independent experimental opponents. DonutSMP
+production parity has not been established; no universal bypass is claimed.
 
 ## Saved state
 
@@ -21,8 +20,8 @@ verified universal bypass.
 - Movement source fix committed/pushed as `b18a8d76`.
 - Source, positive-control pack, and test guide are preserved in the repository
   and generated locally. Generated binaries are ignored by Git.
-- Persistent-memory boot/read/write calls currently return MCP internal errors.
-  This repository record preserves the handoff; it does not imply memory was saved.
+- Memory boot intermittently fails; a decision checkpoint was successfully saved
+  to the NAS after runtime validation. This repository also preserves the handoff.
 
 ## First concrete compatibility fix
 
@@ -73,31 +72,26 @@ establish the behavior of a private fork or a different installed version.
 
 | Surface | Evidence inspected | Next validation |
 | --- | --- | --- |
-| Sign translation | Real component assertions; Fabric/Mixin constructor redirect; patched/unpatched editor and packet-codec round trips | Supported-loader full launch and actual CheckHacks scans |
+| Sign translation | Real component assertions; Fabric/Mixin constructor redirect; patched/unpatched editor and packet-codec round trips | Actual CheckHacks scans |
 | Movement input | Fixed source and optimized release class; actual 26.3 KeyboardInput/Vec2/Input; Grim source | Compare walking/diagonal/sneak paths in game |
 | Rotations | LookBehavior applies targets before packet updates; smoothLook runs in POST | Correlate server rotation/placement flags with packet order |
 | Placement | BlockPlaceHelper invokes the game controller; Grim RotationPlace/MultiPlace validate interaction state | Reproduce any placement flags with actual logs and configuration |
 | Mining | BlockBreakHelper uses controller progress/delay; Grim FastBreak checks progress/timing | Reproduce observed mining flags without assuming thresholds |
 | Inventory | allowInventory defaults false; optional stationary gating exists | Test only the inventory behavior enabled on this client/server |
-| Protocol/versions | Client 26.3 uses modern key-state reporting; current Grim source contains 26.3 cases | Identify backend/proxy/PacketEvents/ViaVersion versions and placement |
+| Protocol/versions | Client 26.3 uses modern key-state reporting; current Grim source contains 26.3 cases | Exercise the chosen direct Paper backend; proxy coverage remains separate |
 
 `antiCheatCompatibility` already defaults to true. Its name is not a guarantee
 that every check or private server modification is covered. `smoothLook` changes
 the local camera after rotation packets; enabling it alone does not smooth the
 rotations observed by the server.
 
-## Information needed for server-specific changes
+## Clean-room experiments
 
-Provide the plugin names/builds, local configuration paths, recent flag logs from
-an authorized test account, backend Minecraft version, proxy/ViaVersion setup,
-and a local Minecraft 26.3/Fabric instance path. Keep secrets and player-identifying
-data out of shared excerpts. These facts determine which tests and changes are
-relevant; guessed plugin defaults would not establish compatibility.
-
-Next: supported-loader full game validation and tests on the authorized server.
-Reproduce each observed server flag separately against a vanilla control and the
-patched client. Save scan/flag outcomes and identify the concrete source mismatch
-before changing packet or gameplay behavior.
+Use fresh disposable worlds, public versioned plugins, explicit configuration
+profiles, and a synthetic local test account. Preserve the original client as a
+positive control and enable a test-only language pack so the translation oracle
+actually distinguishes stock from patched behavior. Never infer compatibility
+with the undisclosed private stack from this benchmark.
 
 ## Sources
 
@@ -134,5 +128,43 @@ control objects use test-only allocation/reflection, and no rendered game/world
 session or complete CheckHacks sequence has been tested.
 
 Reproduction commands and resource limits: `scripts/sign-privacy/README.md`.
-Runtime log: `.validation/actual-runtime.log` (ignored, local). The memory MCP is
-still unavailable; this document is the durable project handoff.
+Runtime log: `.validation/actual-runtime.log` (ignored, local). A NAS decision checkpoint was saved after the initial boot error; this document
+also preserves the project handoff.
+
+
+## Supported loader and clean-room constraint
+
+The complete suite was rerun with the official Fabric 0.19.5 JAR (SHA-256
+`93044e4dd46de5d8136701292f05e868da096d2c9fddb4793e4fdbcc63efc695`), without a
+dependency override: real components, all 128 inputs, real Mixin application,
+Baritone initialization, and 100 patched plus 100 unpatched packet-codec cases pass.
+Local log: `.validation/actual-runtime-0195.log`.
+
+Andre subsequently requested blind clean-room tests. Do not inspect or request his
+private server or installed anti-cheats. The separate
+`/var/home/andre/Projects/andre-anticheat` project uses published Paper 26.3 build
+140, Grim 2.3.74-61117c2, CheckHacks 1.3.1, and new explicit configurations. These
+opponents are experimental choices, not claims about his server's hidden stack.
+
+## Rendered client benchmark
+
+A fresh Minecraft 26.3/Fabric 0.19.5 client now joins the disposable Paper server,
+with the positive-control translation pack enabled, and completes a normal
+diagonal Baritone goal. Both stock and patched builds complete the conservative, balanced, and strict
+profile paths without movement flags in these limited trials. No measured movement flag
+reduction is claimed for this path.
+
+Public CheckHacks 1.3.1 initially returns `PROTECTED` for both variants because its
+reflection code still requests the removed `(BlockPos, boolean)` open-sign packet
+constructor. The test overlay changes only that adapter to support
+`(BlockPos, SignTextSlot.FRONT)`. Every other upstream class, including response
+evaluation, confirmation, timing, and fallback construction, is byte-identical.
+With that documented server compatibility overlay, the patched client returns
+`NOT_DETECTED`; stock with the same test pack returns `DETECTED` on the initial
+and confirmation scan. This is an actual client/server sign interaction, in
+addition to the earlier constructor/codec tests.
+
+The clean-room project records all selected profile comparisons and deliberate
+invalid-movement controls. Its report is authoritative for those bounded trials.
+This result does not establish universal anti-cheat evasion, ordinary gameplay
+coverage beyond the tested path, or behavior of an undisclosed server stack.
