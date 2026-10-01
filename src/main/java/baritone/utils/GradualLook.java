@@ -31,8 +31,6 @@ public final class GradualLook {
             settings.blockFreeLook.value = false;
             settings.smoothLook.value = false;
             settings.walkWhileBreaking.value = false;
-            settings.allowSprint.value = false;
-            settings.allowParkour.value = false;
         }
     }
     public static void register(IBaritone baritone) {

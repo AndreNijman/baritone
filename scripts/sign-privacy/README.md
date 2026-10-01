@@ -5,7 +5,7 @@ Target: **Minecraft 26.3, Fabric Loader 0.19.5 or later, Java 25 or later**.
 The candidate includes the sign privacy patch and the Minecraft 26.3 keyboard
 input and mining corrections described in `docs/anticheat-compatibility.md`.
 
-The installable JAR is `dist/baritone-api-fabric-1.20.0-compat.3.jar`.
+The installable JAR is `dist/baritone-api-fabric-1.20.0-compat.4.jar`.
 Replace the existing Baritone JAR in the instance's `mods` directory with this file.
 Restart Minecraft, and run `#help` to confirm Baritone loads. Only one Baritone JAR
 should be installed. This is the API release with its normal commands and bundled
@@ -116,7 +116,7 @@ flags remain in some ordinary profiles; the conservative trial also has a startu
 BadPacketsR flag. Full details are in `docs/anticheat-compatibility.md` and the
 separate clean-room report. The private server's exact rejection remains unknown.
 
-## Gradual ground aiming (compat.3)
+## Gradual ground aiming (compat.4)
 
 The controller is enabled on restart. Run `#gradual status`, `#gradual on`, or
 `#gradual off`. Enabling it applies these settings:
@@ -126,12 +126,12 @@ freeLook false
 blockFreeLook false
 smoothLook false
 walkWhileBreaking false
-allowSprint false
-allowParkour false
 ```
 
 This keeps the camera aligned with transmitted rotations and makes breaking
-stationary. Turning the controller off leaves those settings as currently
+stationary. Sprint and parkour settings are preserved; the mode does not change
+either setting. The installed profile enables both per the requested preference.
+Turning the controller off leaves those settings as currently
 configured; it does not restore earlier settings. The toggle is session-only.
 Elytra flight retains its ordinary processor behavior. Other settings can still
 be changed normally, so overriding these presets changes the tested behavior.
@@ -144,7 +144,7 @@ because turning takes several ticks. Breaking uses the current view ray and
 normal controller progression/abort packets.
 
 The clean-room gameplay report is
-`../andre-anticheat/reports/2026-10-01-gradual-look.md` relative to the project root.
+`../andre-anticheat/reports/2026-10-01-travel.md` relative to the project root.
 It records received rotation measurements, path completion, mining cases,
 failed prototypes and remaining flags. There is no human-observer study and no
 proof against the undisclosed private stack.
@@ -201,7 +201,7 @@ Run the real-runtime tests with already cached Linux launcher libraries:
 python3 scripts/compatibility/test_runtime.py \
   --minecraft /path/to/minecraft-26.3.jar \
   --metadata /path/to/26.3.json \
-  --candidate dist/baritone-api-fabric-1.20.0-compat.3.jar \
+  --candidate dist/baritone-api-fabric-1.20.0-compat.4.jar \
   --libraries /path/to/launcher/meta/libraries \
   --fabric-runtime \
   --upstream-control /path/to/baritone-api-fabric-1.20.0.jar

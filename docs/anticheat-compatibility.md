@@ -295,3 +295,44 @@ Baritone JAR remains. Restart the instance and use `#gradual status` to confirm
 this build. Complete source and reproducible offline overlay tooling are preserved.
 NAS memory reads currently return internal errors; this document and the tracked
 benchmark report preserve the local checkpoint.
+
+## Keep normal sprint and parkour — 2026-10-01 (compat.4)
+
+Andre rejected the automatic no-sprint/no-parkour preset because it unnecessarily
+slows travel. Compat.4 removes both assignments from GradualLook.enable. Starting
+the game or running `#gradual on` preserves the user's allowSprint/allowParkour
+values. The selected profile enables both. Matching-view mining and the existing
+12/8-degree ground aiming limits remain; no artificial movement-speed modifier,
+additional mining delay, or parkour restriction is added.
+
+The separate `reports/2026-10-01-travel.md` benchmark records actual sprint ticks,
+airborne ticks, arrival age, rotation packets and mining results. Its parkour
+fixture has a three-block trench and requests a normal four-block sprint jump;
+the strict trial arrives with 57 sprint ticks and 11 airborne ticks, no flags,
+and measured yaw steps at most 11.85 degrees. Unit/runtime/sign regression checks
+still pass. Realistic appearance remains an unmeasured subjective property; the
+change restores travel options while retaining less abrupt aiming.
+
+The shipped compat.4 SHA-256 is
+`4a69e75eaf0105d48281809b4c14cd9ab0f2a2761e7bd767f160373e841790b6`.
+Normal sprint-enabled travel/parkour and mining complete. Mining retains a SprintE
+wall-collision flag in all three profiles, despite zero block restorations. An
+experimental hard-wall sprint-stop hook (SHA-256
+`4f7d1624a89ad91e36e213623a1622117cca3c13d5951cd9e38e4719770303c4`)
+did not remove that flag and is not shipped. Its trials remain in the report as
+an unsuccessful experiment. No extra sprint suppression is installed.
+The earlier compat.3 report and artifacts remain historical evidence, including
+its slower no-sprint profile and failed prototype; they are not rewritten as
+measurements of this new build.
+
+Compat.4 is installed in the existing Fabric 26.3 profile. `baritone/settings.txt`
+explicitly retains `allowSprint true` and `allowParkour true`; other settings are
+preserved. The verified old compat.3 JAR and settings are backed up outside mods
+in `.codex-backups/travel-compat.4/`. Only one standalone Baritone JAR remains.
+The measured diagonal goal takes 71 movement ticks with sprint versus 91 in the
+old walking-only mode, in one finite comparison. The shipped parkour trial has
+57 sprint ticks, 11 airborne ticks, and completes the gap. All three shipped
+mining-profile trials remove nine of nine blocks with zero restorations; each
+still logs one SprintE wall flag. That finding is retained rather than hidden
+by disabling sprint globally. Runtime/sign/input/geometry checks pass for the
+exact shipped hash. Restart the profile and use `#gradual status`.
