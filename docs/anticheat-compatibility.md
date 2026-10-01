@@ -394,3 +394,53 @@ was closed. Verified the installed JAR against the exact tested SHA-256, one
 standalone Baritone JAR, and unchanged settings including allowSprint/allowParkour
 true. The previous compat.4 JAR and settings are backed up outside mods at
 `.codex-backups/navigation-compat.5/`. Restart and use `#gradual status`.
+
+
+## Water steering eligibility — 2026-10-01 (compat.6)
+
+Andre reported missed water waypoints and repeated retries. Compat.5 excluded
+non-grounded players and requested jumps from its travel correction, which also
+excluded swimming and buoyancy input. Compat.6 permits the same eight-direction
+steering in water, including while jump is held. It also checks the current
+movement’s source/destination fluid so surface bobbing and bank exits retain
+correction while the body briefly leaves the water. Jump input and vertical
+physics are untouched. Dry jumps, flight, vehicles and interaction inputs retain
+the previous behavior. Camera easing, its 12/8 degree caps, sprint and parkour
+settings are unchanged.
+
+The exact compat.6 SHA-256 is
+`da2e89f72bd69a6b809e4dfcd68f07a8eda78ef3b527c8860b56906f5a1764bc`.
+The final straight water crossing reaches its dry exit bank in 172 movement ticks;
+the alternating one-block water openings complete in 379 ticks over 35.22 blocks.
+Both record actual water and buoyancy-jump ticks and zero replans, backtracks or
+logged off-path ticks. Dry switchbacks complete in 131 ticks over 34.59 blocks;
+the sprint trench jump takes 49 ticks with 47 sprint ticks and 11 airborne ticks.
+These are finite compatibility cases; the reported private-world retry loop has
+not been reproduced, and surface routes also complete before the correction.
+
+A roofed, fully submerged tunnel fails to plan and moves zero blocks with both
+compat.5 and the first compat.6 prototype. Upstream MovementHelper.canWalkThrough
+rejects water with water above; this steering change does not add submerged path
+planning. Failed setup/control results and this limitation remain in the report.
+The renderer needed a bounded 1 GiB per-file limit instead of 512 MiB for its
+large water buffer; the private network, memory, CPU, task and time limits remain.
+
+Runtime coverage passes 142,626 geometry/steering/eligibility assertions, 123 real
+components, all 128 actual keyboard combinations, supported Fabric/Mixin startup,
+100 patched plus 100 stock sign round trips and independent reachability API
+compilation. The overlay changes eight original classes and two metadata files,
+adding six classes; bundled libraries are unchanged. Full Gradle rebuilding is
+not performed. BadPacketsR/Timer/TimerLimit/Simulation and tight-wall SprintE
+flags remain in some runs. The complete results are recorded in
+`../andre-anticheat/reports/2026-10-01-water.md` and its JSON companion.
+
+The final default-water-sprinting case also completes the winding route in
+379 movement ticks over 35.34 blocks, with zero replans, backtracks or off-path
+ticks. All five final regression cases use the exact compat.6 hash; every failed
+setup and experimental outcome is preserved in the fifteen-trial report.
+
+Installed compat.6 in the inactive Modrinth Fabric 26.3 profile after verifying
+its tested SHA-256, archive metadata and one standalone Baritone JAR. Settings
+remain byte-identical, including allowSprint/allowParkour true. The previous
+compat.5 JAR and settings are backed up outside mods at
+`.codex-backups/water-compat.6/`. Restart Minecraft and use `#gradual status`.

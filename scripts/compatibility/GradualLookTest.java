@@ -33,6 +33,8 @@ public final class GradualLookTest {
             float wanted=(float)(degrees-Math.toDegrees(Math.atan2(l,f))), actual=(float)-Math.toDegrees(Math.atan2(sl,sf));
             check(Math.abs(Rotation.normalizeYaw(wanted-actual))<=22.501);
         }
+        boolean[] eligible={false,true,true,true,false,false,true,true};
+        for(int state=0;state<8;state++) check(GradualLook.canSteer((state&1)!=0,(state&2)!=0,(state&4)!=0)==eligible[state]);
         GradualLook.steerInput(null);
         Rotation wrap=GradualLook.step(new Rotation(179,0),new Rotation(-179,0),0.5);
         check(wrap.getYaw()>179 && wrap.getYaw()<181);

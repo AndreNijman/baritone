@@ -9,6 +9,7 @@ import baritone.api.utils.input.Input;
 import baritone.api.utils.Rotation;
 import baritone.api.utils.RayTraceUtils;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.phys.HitResult;
 import java.util.Collections;
 import java.util.Map;
@@ -87,12 +88,12 @@ public final class GradualLook {
     public static void steerInput(IPlayerContext context) {
         if (context == null || !enabled || context.player().isFallFlying() || context.player().isPassenger()) return;
         Rotation desired=travelTargets.get(context);
-        if (desired == null || !context.player().onGround()) return;
+        if (desired == null) return;
         IBaritone baritone=BaritoneAPI.getProvider().getBaritoneForPlayer(context.player());
         if (baritone == null) return;
         var input=baritone.getInputOverrideHandler();
-        // Jump timing and sprint-jump impulse remain the path executor's responsibility.
-        if (input.isInputForcedDown(Input.JUMP)) return;
+        // In water, JUMP is buoyancy input, not a land sprint-jump impulse.
+        if (!canSteer(context.player().onGround(), context.player().isInWater() || waterMovement(baritone, context), input.isInputForcedDown(Input.JUMP))) return;
         int mask=(input.isInputForcedDown(Input.MOVE_FORWARD)?1:0) | (input.isInputForcedDown(Input.MOVE_BACK)?2:0)
                 | (input.isInputForcedDown(Input.MOVE_LEFT)?4:0) | (input.isInputForcedDown(Input.MOVE_RIGHT)?8:0);
         Rotation actual=baritone.getLookBehavior().getAimProcessor().peekRotation(desired);
@@ -101,6 +102,20 @@ public final class GradualLook {
         input.setInputForceState(Input.MOVE_BACK,(selected&2)!=0);
         input.setInputForceState(Input.MOVE_LEFT,(selected&4)!=0);
         input.setInputForceState(Input.MOVE_RIGHT,(selected&8)!=0);
+    }
+    /** Keep water steering during surface bobbing and the current bank-exit movement. */
+    private static boolean waterMovement(IBaritone baritone, IPlayerContext context) {
+        var executor=baritone.getPathingBehavior().getCurrent();
+        if (executor == null) return false;
+        var movements=executor.getPath().movements();
+        int index=executor.getPosition();
+        if (index<0 || index>=movements.size()) return false;
+        var movement=movements.get(index);
+        return context.world().getFluidState(movement.getSrc()).is(FluidTags.WATER)
+                || context.world().getFluidState(movement.getDest()).is(FluidTags.WATER);
+    }
+    public static boolean canSteer(boolean grounded, boolean inWater, boolean jumping) {
+        return inWater || grounded && !jumping;
     }
     /** Eight digital keyboard headings; preserves the requested world direction within 22.5 degrees. */
     public static int steeringKeys(int mask, float desiredYaw, float actualYaw) {
