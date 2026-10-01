@@ -90,6 +90,7 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
         if (isInputForcedDown(Input.CLICK_LEFT)) {
             setInputForceState(Input.CLICK_RIGHT, false);
         }
+        GradualLook.steerInput(ctx);
         blockBreakHelper.tick(isInputForcedDown(Input.CLICK_LEFT));
         blockPlaceHelper.tick(isInputForcedDown(Input.CLICK_RIGHT));
 

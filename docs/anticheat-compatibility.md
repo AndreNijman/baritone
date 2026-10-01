@@ -336,3 +336,61 @@ mining-profile trials remove nine of nine blocks with zero restorations; each
 still logs one SprintE wall flag. That finding is retained rather than hidden
 by disabling sprint globally. Runtime/sign/input/geometry checks pass for the
 exact shipped hash. Restart the profile and use `#gradual status`.
+
+
+## Accurate ground steering while turning — 2026-10-01 (compat.5)
+
+Andre approved the existing appearance but reported circling, missing waypoints
+and replanning. The tight clean-room switchback route reproduced the regression:
+compat.4 took 205 movement ticks and traveled 47.04 blocks, with one replan and
+seven logged off-path ticks. The ordinary stock control took 127 ticks and
+33.56 blocks without replanning. Increasing the response of small yaw corrections
+alone did not improve it and is not shipped.
+
+Compat.5 retains the exact original aiming step, angle caps and easing curve.
+Before the normal input handler applies travel keys, it chooses the nearest of
+eight digital keyboard headings relative to the actual eased aim for that tick.
+This follows the intended world heading to within 22.5 degrees while the camera
+turns. Minecraft still normalizes the vector and performs ordinary physics; the
+transmitted view and physics rotation remain consistent. No extra packet,
+movement-speed multiplier or hidden instant-turn physics is introduced.
+
+Only current-tick non-interaction ground travel is remapped. Requested jumps,
+airborne movement, vehicle input, flight, mining and placement retain their
+existing behavior. State clears at each tick, world change and mode toggle.
+Sprint and parkour remain enabled and their settings are preserved. The source
+hook is InputOverrideHandler.onTick; the matching pinned optimized hook is in
+baritone/fj.class. The overlay still changes eight original classes and two
+metadata files, adding six classes. No new input class or bundled library changes.
+
+The exact compat.5 SHA-256 is
+`54f26bc538be370e76097c43cd2a5ccdfab79b2b787cb8cb7f7c5e950c8242ab`.
+It completes the tight route in 130 ticks over 34.74 blocks, with zero off-path
+ticks, replans or backtracks. That is a finite 37% reduction in elapsed ticks
+versus compat.4, close to the 127-tick stock control. A prior linear-yaw-plus-
+steering experiment completed in 129 ticks; original easing was restored to
+preserve the user's approved appearance. Measurements are finite fixtures,
+not a guarantee for every terrain, latency or undisclosed server stack.
+
+The full report and every prototype/control input hash are recorded in
+`../andre-anticheat/reports/2026-10-01-navigation.md` and its JSON companion.
+Runtime checks include 142,618 geometry/steering assertions, 123 real-component
+assertions, all 128 real keyboard combinations, supported Fabric/Mixin startup,
+100 patched/100 stock sign round trips and independent reachability API compile.
+A complete Gradle rebuild remains unperformed. Wall sprint flags remain recorded.
+
+Final regression trials also complete the wider corner route in 135 ticks over
+36.24 blocks (compat.4:149 ticks/40.42 blocks), the three-block trench jump in
+50 ticks with 47 actual sprint ticks/11 airborne ticks, and the unchanged diagonal
+goal in 71 ticks with 70 sprint ticks. Mining removes all nine targets with nine
+server-confirmed AIR states, 63 normal Punch sends, nine cobblestone and zero
+client restorations. The final mining and diagonal trials log no flags; tighter
+corners still log one SprintE wall flag, while the concurrent wider-corner/parkour
+trials retain startup Timer/TimerLimit flags. All outcomes and hashes are preserved.
+These are compatibility/navigation regressions, not a human classifier benchmark.
+
+Installed in the Modrinth Fabric 26.3 profile after checking that its Java process
+was closed. Verified the installed JAR against the exact tested SHA-256, one
+standalone Baritone JAR, and unchanged settings including allowSprint/allowParkour
+true. The previous compat.4 JAR and settings are backed up outside mods at
+`.codex-backups/navigation-compat.5/`. Restart and use `#gradual status`.

@@ -5,7 +5,7 @@ Target: **Minecraft 26.3, Fabric Loader 0.19.5 or later, Java 25 or later**.
 The candidate includes the sign privacy patch and the Minecraft 26.3 keyboard
 input and mining corrections described in `docs/anticheat-compatibility.md`.
 
-The installable JAR is `dist/baritone-api-fabric-1.20.0-compat.4.jar`.
+The installable JAR is `dist/baritone-api-fabric-1.20.0-compat.5.jar`.
 Replace the existing Baritone JAR in the instance's `mods` directory with this file.
 Restart Minecraft, and run `#help` to confirm Baritone loads. Only one Baritone JAR
 should be installed. This is the API release with its normal commands and bundled
@@ -76,7 +76,7 @@ resource, which alone is not proof that the corresponding mod is installed.
 - Compiled the included mixin source against the real game and Mixin API.
 - Checked archive integrity: eight original classes and two metadata files change.
   Six classes are added; bundled libraries are unchanged.
-- Passed 50,202 geometry assertions covering wraparound, angle caps, pitch limits,
+- Passed 142,618 geometry and steering assertions covering wraparound, angle caps, pitch limits,
   mouse-sensitivity increments, convergence and disabling the controller.
 - Compiled the changed reachability API independently of the new main implementation.
 - Tested pure live peeks, isolated fork progression, and an unlimited geometric
@@ -116,7 +116,7 @@ flags remain in some ordinary profiles; the conservative trial also has a startu
 BadPacketsR flag. Full details are in `docs/anticheat-compatibility.md` and the
 separate clean-room report. The private server's exact rejection remains unknown.
 
-## Gradual ground aiming (compat.4)
+## Gradual ground aiming (compat.5)
 
 The controller is enabled on restart. Run `#gradual status`, `#gradual on`, or
 `#gradual off`. Enabling it applies these settings:
@@ -143,8 +143,16 @@ uses a separate pure endpoint so a reachable block is not discarded merely
 because turning takes several ticks. Breaking uses the current view ray and
 normal controller progression/abort packets.
 
+Travel steering now chooses the nearest normal keyboard direction relative to
+that tick's eased view, so forward travel does not keep following the previous
+heading while the camera turns. The original 0.35 easing curve and angle caps
+are unchanged. This applies to current-tick ground travel targets; jump requests,
+airborne movement, interactions, vehicles and flight keep their existing input
+behavior. Direction choices use normal key states and normalized vectors.
+Travel target state clears on each tick, world change and mode toggle.
+
 The clean-room gameplay report is
-`../andre-anticheat/reports/2026-10-01-travel.md` relative to the project root.
+`../andre-anticheat/reports/2026-10-01-navigation.md` relative to the project root.
 It records received rotation measurements, path completion, mining cases,
 failed prototypes and remaining flags. There is no human-observer study and no
 proof against the undisclosed private stack.
@@ -201,7 +209,7 @@ Run the real-runtime tests with already cached Linux launcher libraries:
 python3 scripts/compatibility/test_runtime.py \
   --minecraft /path/to/minecraft-26.3.jar \
   --metadata /path/to/26.3.json \
-  --candidate dist/baritone-api-fabric-1.20.0-compat.4.jar \
+  --candidate dist/baritone-api-fabric-1.20.0-compat.5.jar \
   --libraries /path/to/launcher/meta/libraries \
   --fabric-runtime \
   --upstream-control /path/to/baritone-api-fabric-1.20.0.jar

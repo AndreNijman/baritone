@@ -24,6 +24,16 @@ public final class GradualLookTest {
                 check(Math.abs(current.getPitch()-target.getPitch())<=q+0.001);
             }
         }
+        for (int mask=0;mask<128;mask++) for (int degrees=-180;degrees<=180;degrees++) {
+            int selected=GradualLook.steeringKeys(mask,degrees,0);
+            check((selected&~15)==(mask&~15));
+            int f=((mask&1)!=0?1:0)-((mask&2)!=0?1:0), l=((mask&4)!=0?1:0)-((mask&8)!=0?1:0);
+            if(f==0 && l==0) { check(selected==mask);continue; }
+            int sf=((selected&1)!=0?1:0)-((selected&2)!=0?1:0), sl=((selected&4)!=0?1:0)-((selected&8)!=0?1:0);
+            float wanted=(float)(degrees-Math.toDegrees(Math.atan2(l,f))), actual=(float)-Math.toDegrees(Math.atan2(sl,sf));
+            check(Math.abs(Rotation.normalizeYaw(wanted-actual))<=22.501);
+        }
+        GradualLook.steerInput(null);
         Rotation wrap=GradualLook.step(new Rotation(179,0),new Rotation(-179,0),0.5);
         check(wrap.getYaw()>179 && wrap.getYaw()<181);
         Rotation target=new Rotation(90,20);GradualLook.enable(false);check(GradualLook.limit(target,new Rotation(0,0),null)==target);

@@ -84,6 +84,8 @@ public final class PatchGradualLook implements Opcodes {
                                 if (mining && !mineDone && opcode==ILOAD && variable==2) {
                                     mineDone=true;changes[3]++;
                                     super.visitVarInsn(ALOAD,1);super.visitFieldInsn(GETFIELD,"baritone/fd","a","L"+CTX+";");
+                                    super.visitMethodInsn(INVOKESTATIC,HOOK,"steerInput","(L"+CTX+";)V",false);
+                                    super.visitVarInsn(ALOAD,1);super.visitFieldInsn(GETFIELD,"baritone/fd","a","L"+CTX+";");
                                     super.visitVarInsn(ALOAD,1);super.visitFieldInsn(GETFIELD,"baritone/fd","a","Z");
                                     super.visitMethodInsn(INVOKESTATIC,HOOK,"allowMining","(ZL"+CTX+";Z)Z",false);
                                 }

@@ -5,6 +5,7 @@ import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import baritone.api.behavior.look.IAimProcessor;
 import baritone.api.utils.IPlayerContext;
+import baritone.api.utils.input.Input;
 import baritone.api.utils.Rotation;
 import baritone.api.utils.RayTraceUtils;
 import net.minecraft.world.phys.BlockHitResult;
@@ -19,12 +20,14 @@ public final class GradualLook {
     private static volatile boolean enabled = true;
     private static final Map<IPlayerContext, Rotation> interactions = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<IPlayerContext, Rotation> tickRotations = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<IPlayerContext, Rotation> travelTargets = Collections.synchronizedMap(new WeakHashMap<>());
     private GradualLook() {}
     public static boolean enabled() { return enabled; }
     public static void enable(boolean value) {
         enabled = value;
         interactions.clear();
         tickRotations.clear();
+        travelTargets.clear();
         if (value) {
             var settings = BaritoneAPI.getSettings();
             settings.freeLook.value = false;
@@ -38,6 +41,7 @@ public final class GradualLook {
         if (enabled) enable(true);
     }
     public static void beginTick(IPlayerContext context) {
+        travelTargets.remove(context);
         if (enabled && !context.player().isFallFlying()) tickRotations.put(context,context.playerRotations());
         else tickRotations.remove(context);
     }
@@ -45,9 +49,10 @@ public final class GradualLook {
         if (!enabled || context.player().isFallFlying()) return current;
         Rotation recorded=tickRotations.get(context);return recorded==null ? current : recorded;
     }
-    public static void clear(IPlayerContext context) { interactions.remove(context);tickRotations.remove(context); }
+    public static void clear(IPlayerContext context) { interactions.remove(context);tickRotations.remove(context);travelTargets.remove(context); }
     public static void request(IPlayerContext context, Rotation desired, boolean interact) {
-        if (interact) interactions.put(context, desired); else interactions.remove(context);
+        if (interact) { interactions.put(context, desired); travelTargets.remove(context); }
+        else { interactions.remove(context); travelTargets.put(context, desired); }
     }
     /** Preserve a pure peek operation: this does not advance live or simulation state. */
     public static Rotation limit(Rotation actual, Rotation previous, IPlayerContext context) {
@@ -77,6 +82,37 @@ public final class GradualLook {
         int maxPixels = Math.max(1, (int)Math.floor(maximum/quantum));
         int pixels = Math.max(-maxPixels, Math.min(maxPixels, Math.round(desired/quantum)));
         return pixels * quantum;
+    }
+    /** Use ordinary keyboard directions relative to this tick's visible heading. */
+    public static void steerInput(IPlayerContext context) {
+        if (context == null || !enabled || context.player().isFallFlying() || context.player().isPassenger()) return;
+        Rotation desired=travelTargets.get(context);
+        if (desired == null || !context.player().onGround()) return;
+        IBaritone baritone=BaritoneAPI.getProvider().getBaritoneForPlayer(context.player());
+        if (baritone == null) return;
+        var input=baritone.getInputOverrideHandler();
+        // Jump timing and sprint-jump impulse remain the path executor's responsibility.
+        if (input.isInputForcedDown(Input.JUMP)) return;
+        int mask=(input.isInputForcedDown(Input.MOVE_FORWARD)?1:0) | (input.isInputForcedDown(Input.MOVE_BACK)?2:0)
+                | (input.isInputForcedDown(Input.MOVE_LEFT)?4:0) | (input.isInputForcedDown(Input.MOVE_RIGHT)?8:0);
+        Rotation actual=baritone.getLookBehavior().getAimProcessor().peekRotation(desired);
+        int selected=steeringKeys(mask, desired.getYaw(), actual.getYaw());
+        input.setInputForceState(Input.MOVE_FORWARD,(selected&1)!=0);
+        input.setInputForceState(Input.MOVE_BACK,(selected&2)!=0);
+        input.setInputForceState(Input.MOVE_LEFT,(selected&4)!=0);
+        input.setInputForceState(Input.MOVE_RIGHT,(selected&8)!=0);
+    }
+    /** Eight digital keyboard headings; preserves the requested world direction within 22.5 degrees. */
+    public static int steeringKeys(int mask, float desiredYaw, float actualYaw) {
+        int forward=((mask&1)!=0?1:0)-((mask&2)!=0?1:0);
+        int left=((mask&4)!=0?1:0)-((mask&8)!=0?1:0);
+        if (forward==0 && left==0) return mask;
+        float error=Rotation.normalizeYaw(desiredYaw-actualYaw);
+        if (Math.abs(error)<22.5f) return mask;
+        double relative=error-Math.toDegrees(Math.atan2(left,forward));
+        double angle=Math.toRadians(Math.round(relative/45d)*45d);
+        int f=(int)Math.round(Math.cos(angle)), l=(int)Math.round(-Math.sin(angle));
+        return (mask&~15) | (f>0?1:f<0?2:0) | (l>0?4:l<0?8:0);
     }
     /** Wait for the actual view ray to meet the requested block; abort interrupted digging normally. */
     public static boolean allowMining(boolean requested, IPlayerContext context, boolean wasHitting) {

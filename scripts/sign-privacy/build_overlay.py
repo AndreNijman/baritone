@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 UPSTREAM_SHA256 = "49adfc063cfbfd0b6f08e9d814359807baa2d1768c0d39d6c5968268547cbca6"
 MINECRAFT_SHA1 = "e877b6a07acd633fb3bb475002175cec036e7b87"
-VERSION = "1.20.0+compat.4"
+VERSION = "1.20.0+compat.5"
 CLASSES = [
     "baritone/launch/privacy/SignTextPrivacy.class",
     "baritone/launch/privacy/SignTextPrivacy$Api.class",
@@ -108,7 +108,7 @@ PY
         if not line.startswith("BUILD_CLASSES="):
             print(line)
 
-    destination = ROOT / "dist" / "baritone-api-fabric-1.20.0-compat.4.jar"
+    destination = ROOT / "dist" / "baritone-api-fabric-1.20.0-compat.5.jar"
     destination.parent.mkdir(exist_ok=True)
     with zipfile.ZipFile(options.upstream) as original, zipfile.ZipFile(destination, "w") as patched:
         assert not any(name.upper().endswith((".SF", ".RSA", ".DSA")) for name in original.namelist()), "Signed input requires separate handling"
@@ -163,7 +163,7 @@ PY
         source_files.update(str(path.relative_to(ROOT)) for path in (ROOT / directory).rglob("*") if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc")
     source_files.add("src/launch/java/baritone/launch/mixins/MixinSignEditScreen.java")
     source_files.update(["src/main/java/baritone/utils/GradualLook.java", "src/main/java/baritone/utils/GradualLookCommand.java"])
-    source_archive = destination.parent / "baritone-1.20.0-compat.4-source.zip"
+    source_archive = destination.parent / "baritone-1.20.0-compat.5-source.zip"
     with zipfile.ZipFile(source_archive, "w") as archive:
         for name in sorted(source_files):
             path = ROOT / name
