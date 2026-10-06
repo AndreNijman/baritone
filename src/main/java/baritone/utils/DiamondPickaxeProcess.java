@@ -519,7 +519,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         var items=ctx.player().getInventory().getNonEquipmentItems();
         for(int i=0;i<9;i++)if(buildingBlock(items.get(i)))return true;
         for(int i=9;i<items.size();i++)if(buildingBlock(items.get(i))) {
-            if(readyToClick())click(ctx.player().inventoryMenu,i,8,ContainerInput.SWAP);
+            if(readyToClick() && quietForClicks())click(ctx.player().inventoryMenu,i,8,ContainerInput.SWAP);
             return false;
         }
         return true; // Initial collection can start without scaffolding.
@@ -545,6 +545,15 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         return -1;
     }
     private boolean diamond(BlockPos p) { var s=ctx.world().getBlockState(p);return s.is(Blocks.DIAMOND_ORE) || s.is(Blocks.DEEPSLATE_DIAMOND_ORE); }
+    /** Inventory clicks only while standing still and not breaking a block. */
+    private boolean quietForClicks() {
+        return !ctx.minecraft().gameMode.isDestroying() && ctx.player().onGround() && ctx.player().getDeltaMovement().horizontalDistanceSqr()<0.0025;
+    }
+    private boolean diamondWithin(int radius) {
+        BlockPos feet=ctx.playerFeet();
+        for(int dx=-radius;dx<=radius;dx++)for(int dy=-radius;dy<=radius;dy++)for(int dz=-radius;dz<=radius;dz++)if(diamond(feet.offset(dx,dy,dz)))return true;
+        return false;
+    }
     private boolean diamondInReach() {
         if(ctx.objectMouseOver() instanceof BlockHitResult hit && hit.getType()==HitResult.Type.BLOCK && diamond(hit.getBlockPos()))return true;
         BlockPos head=BlockPos.containing(ctx.playerHead());
@@ -559,11 +568,14 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
      * stone and dirt use the stone pickaxe, and bring it in only when diamond ore (which needs iron) is within reach.
      */
     private void manageDiamondTools() {
-        if(!readyToClick() || !tool(Items.STONE_PICKAXE))return;
+        // Swapping the held tool mid-break makes the server time the break differently and undo it (a ghost block).
+        if(!readyToClick() || !tool(Items.STONE_PICKAXE) || !quietForClicks())return;
         int iron=slotOf(Items.IRON_PICKAXE),stone=slotOf(Items.STONE_PICKAXE);
         if(iron<0 || stone<0)return;
         var menu=ctx.player().inventoryMenu;
         if(diamondInReach()) { if(iron>=9)click(menu,iron,7,ContainerInput.SWAP);return; }
+        // Only put it away once no diamond is anywhere near, so it does not flap at the edge of reach.
+        if(iron<9 && diamondWithin(8))return;
         if(stone>=9) { click(menu,stone,6,ContainerInput.SWAP);return; }
         if(iron<9) {
             var items=ctx.player().getInventory().getNonEquipmentItems();

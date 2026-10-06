@@ -331,8 +331,11 @@ replaced, and the placement click waits until the player stands still. Boxing in
 skips a block it cannot place after 1.5 seconds and clicks every four ticks once the
 aim is within three degrees. With an iron pickaxe, ordinary digging uses the stone
 pickaxe; while mining towards diamonds the iron pickaxe stays out of the hotbar until
-diamond ore is within reach. A spare wooden pickaxe is burned as furnace fuel before
-planks.
+diamond ore is within reach, and goes back out only once no diamond is within eight
+blocks. These tool swaps, and moving dirt into the hotbar, happen only while the player
+stands still and is not breaking a block: changing the held tool mid-break made the
+server time the break differently and restore the block (a ghost block). A spare
+wooden pickaxe is burned as furnace fuel before planks.
 
 ### What was tested (compat.9)
 
