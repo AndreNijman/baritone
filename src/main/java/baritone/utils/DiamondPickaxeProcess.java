@@ -144,6 +144,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
                 }
                 if(n!=lastCount) { lastCount=n;progressTick=tick; }
                 if (tick-progressTick>6000) { stop("No resource progress for five minutes; check access to "+stage);return null; }
+                if (gatheringBlocks!=null && Arrays.asList(gatheringBlocks).contains(Blocks.DIAMOND_ORE))manageDiamondTools();
                 if (!baritone.getMineProcess().isActive()) {
                     if (++retries>3) { stop("Mining repeatedly failed during "+stage);return null; }
                     baritone.getMineProcess().mine(gatheringBlocks);
@@ -228,7 +229,8 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
                     if(count(Items.COBBLESTONE)<8)return dig("furnace cobblestone",8);
                     return beginCraft(DiamondPickaxeRecipes.furnace());
                 }
-                if(count(Items.COAL)+count(Items.CHARCOAL)==0 && planks()<3)return wood(3);
+                // Each plank smelts 1.5 items, a spare wooden pickaxe one; three iron need three.
+                if(count(Items.COAL)+count(Items.CHARCOAL)==0 && planks()*1.5+(spareWoodenPick() ? 1 : 0)<3)return wood(3);
                 smelting=true;recipeTick=tick;setStage("Smelting iron");return pause();
             }
             if(count(Items.STICK)<2) { if(planks()<2)return wood(2);return beginCraft(DiamondPickaxeRecipes.sticks()); }
@@ -322,7 +324,10 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         if(!input.isEmpty() && !input.is(Items.RAW_IRON)) { stop("Furnace contains a different input; leaving it intact");return null; }
         if(input.getCount()+count(Items.IRON_INGOT)<3 && count(Items.RAW_IRON)>0) { transferOne(menu,0,s->s.is(Items.RAW_IRON));return pause(); }
         if(fuel.isEmpty() && !menu.isLit()) {
-            transferOne(menu,1,s->s.is(Items.COAL)||s.is(Items.CHARCOAL)||s.is(ItemTags.PLANKS));return pause();
+            if(count(Items.COAL)+count(Items.CHARCOAL)>0)transferOne(menu,1,s->s.is(Items.COAL)||s.is(Items.CHARCOAL));
+            else if(spareWoodenPick())transferOne(menu,1,s->s.is(Items.WOODEN_PICKAXE));
+            else transferOne(menu,1,s->s.is(ItemTags.PLANKS));
+            return pause();
         }
         return pause();
     }
@@ -355,6 +360,8 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
                 if(ctx.playerFeet().distSqr(relocateFrom)>=16 || tick-relocateTick>200) relocateFrom=null;
                 else return new PathingCommand(new GoalRunAway(5,relocateFrom),PathingCommandType.REVALIDATE_GOAL_AND_PATH);
             }
+            // If the player drifted onto the chosen spot, placing there can never work: pick another.
+            if(placing!=null && !clearOfPlayer(placing)) placing=null;
             if(placing==null) { placing=findPlacement();placingSince=tick; }
             if(placing==null) {
                 if(++relocations>3) { stop("No reachable floor for a crafting station after moving three times");return pause(); }
@@ -369,7 +376,8 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
             BlockPos support=pos.below();
             Rotation aim=RotationUtils.calcRotationFromVec3d(ctx.playerHead(),new Vec3(pos.getX()+0.5,pos.getY(),pos.getZ()+0.5),ctx.playerRotations());
             baritone.getLookBehavior().updateTarget(aim,true);
-            if(settled(aim) && ctx.objectMouseOver() instanceof BlockHitResult hit && hit.getType()==HitResult.Type.BLOCK && hit.getBlockPos().equals(support) && hit.getDirection()==Direction.UP && tick-lastClick>=10) {
+            boolean still=ctx.player().getDeltaMovement().horizontalDistanceSqr()<0.001 && ctx.player().onGround();
+            if(still && settled(aim) && ctx.objectMouseOver() instanceof BlockHitResult hit && hit.getType()==HitResult.Type.BLOCK && hit.getBlockPos().equals(support) && hit.getDirection()==Direction.UP && tick-lastClick>=10) {
                 useBlock(hit);lastClick=tick;
             }
             return pause();
@@ -417,6 +425,12 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         }
         return best;
     }
+    /** The block space at {@code p} does not overlap the player's body (placing into it would fail). */
+    private boolean clearOfPlayer(BlockPos p) {
+        return !ctx.player().getBoundingBox().inflate(0.05).intersects(new AABB(p.getX(),p.getY(),p.getZ(),p.getX()+1,p.getY()+1,p.getZ()+1));
+    }
+    /** The wooden pickaxe is obsolete (and burnable) once a better one exists. */
+    private boolean spareWoodenPick() { return count(Items.WOODEN_PICKAXE)>0 && (tool(Items.STONE_PICKAXE) || tool(Items.IRON_PICKAXE) || tool(Items.DIAMOND_PICKAXE)); }
     private boolean hostileNearby() {
         var player=ctx.player();
         return ctx.entitiesStream().anyMatch(e->MobSafety.dangerous(e,player) && e.distanceTo(player)<16);
@@ -451,7 +465,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         if(count(DiamondPickaxeProcess::buildingBlock)==0)return null;
         BlockPos target=fill.get(0);
         if(!target.equals(shelterTarget)) { shelterTarget=target;shelterSince=tick; }
-        if(tick-shelterSince>100) { shelterSkipped.add(target);return pause(); }
+        if(tick-shelterSince>30) { shelterSkipped.add(target);return pause(); }
         // Hold a building block.
         var items=ctx.player().getInventory().getNonEquipmentItems();
         int slot=-1;
@@ -468,8 +482,10 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
                     || !ray.getBlockPos().equals(against) || ray.getDirection()!=d.getOpposite())continue;
             setStage("Boxing in by the station");
             baritone.getLookBehavior().updateTarget(aim,true);
-            if(settled(aim) && ctx.objectMouseOver() instanceof BlockHitResult hit && hit.getType()==HitResult.Type.BLOCK && hit.getBlockPos().equals(against)
-                    && hit.getDirection()==d.getOpposite() && tick-lastClick>=6) { useBlock(hit);lastClick=tick; }
+            Rotation actual=ctx.playerRotations();
+            boolean near=Math.abs(Rotation.normalizeYaw(aim.getYaw()-actual.getYaw()))<3 && Math.abs(aim.getPitch()-actual.getPitch())<3;
+            if(near && ctx.objectMouseOver() instanceof BlockHitResult hit && hit.getType()==HitResult.Type.BLOCK && hit.getBlockPos().equals(against)
+                    && hit.getDirection()==d.getOpposite() && tick-lastClick>=4) { useBlock(hit);lastClick=tick; }
             return pause();
         }
         shelterSkipped.add(target);
@@ -492,7 +508,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
             BlockPos p=feet.offset(x,dy,z);
             // Grass, ferns and snow layers are replaced by placement like air.
             var at=ctx.world().getBlockState(p);
-            if(rejectedPlacements.contains(p) || !(at.isAir() || at.canBeReplaced()) || !ctx.world().getFluidState(p).isEmpty() || !ctx.world().getBlockState(p.below()).isSolidRender() || Vec3.atCenterOf(p.below()).distanceToSqr(ctx.playerHead())>=16)continue;
+            if(rejectedPlacements.contains(p) || !clearOfPlayer(p) || !(at.isAir() || at.canBeReplaced()) || !ctx.world().getFluidState(p).isEmpty() || !ctx.world().getBlockState(p.below()).isSolidRender() || Vec3.atCenterOf(p.below()).distanceToSqr(ctx.playerHead())>=16)continue;
             // The support's top face must be visible from the eye, or the placement click can never land.
             if(RotationUtils.reachableOffset(ctx,p.below(),new Vec3(p.getX()+0.5,p.getY(),p.getZ()+0.5),ctx.playerController().getBlockReachDistance(),false).isPresent())return p;
         }
@@ -516,7 +532,44 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         }
         return false;
     }
-    private boolean equipBestPick() { for(Item item:List.of(Items.NETHERITE_PICKAXE,Items.DIAMOND_PICKAXE,Items.IRON_PICKAXE,Items.STONE_PICKAXE,Items.WOODEN_PICKAXE))if(tool(item))return equip(item);return true; }
+    private boolean equipBestPick() {
+        // With an iron pickaxe in hand, ordinary digging uses the stone one; iron is kept for diamond ore.
+        List<Item> order=tool(Items.IRON_PICKAXE) && tool(Items.STONE_PICKAXE) ? List.of(Items.NETHERITE_PICKAXE,Items.DIAMOND_PICKAXE,Items.STONE_PICKAXE,Items.IRON_PICKAXE,Items.WOODEN_PICKAXE)
+                : List.of(Items.NETHERITE_PICKAXE,Items.DIAMOND_PICKAXE,Items.IRON_PICKAXE,Items.STONE_PICKAXE,Items.WOODEN_PICKAXE);
+        for(Item item:order)if(tool(item))return equip(item);
+        return true;
+    }
+    private int slotOf(Item item) {
+        var items=ctx.player().getInventory().getNonEquipmentItems();
+        for(int i=0;i<items.size();i++)if(items.get(i).is(item))return i;
+        return -1;
+    }
+    private boolean diamond(BlockPos p) { var s=ctx.world().getBlockState(p);return s.is(Blocks.DIAMOND_ORE) || s.is(Blocks.DEEPSLATE_DIAMOND_ORE); }
+    private boolean diamondInReach() {
+        if(ctx.objectMouseOver() instanceof BlockHitResult hit && hit.getType()==HitResult.Type.BLOCK && diamond(hit.getBlockPos()))return true;
+        BlockPos head=BlockPos.containing(ctx.playerHead());
+        for(int dx=-4;dx<=4;dx++)for(int dy=-4;dy<=4;dy++)for(int dz=-4;dz<=4;dz++) {
+            BlockPos p=head.offset(dx,dy,dz);
+            if(diamond(p) && Vec3.atCenterOf(p).distanceToSqr(ctx.playerHead())<20 && RotationUtils.reachable(ctx,p,ctx.playerController().getBlockReachDistance()).isPresent())return true;
+        }
+        return false;
+    }
+    /**
+     * Baritone picks the fastest tool in the hotbar. While mining towards diamonds, keep the iron pickaxe out of the hotbar so
+     * stone and dirt use the stone pickaxe, and bring it in only when diamond ore (which needs iron) is within reach.
+     */
+    private void manageDiamondTools() {
+        if(!readyToClick() || !tool(Items.STONE_PICKAXE))return;
+        int iron=slotOf(Items.IRON_PICKAXE),stone=slotOf(Items.STONE_PICKAXE);
+        if(iron<0 || stone<0)return;
+        var menu=ctx.player().inventoryMenu;
+        if(diamondInReach()) { if(iron>=9)click(menu,iron,7,ContainerInput.SWAP);return; }
+        if(stone>=9) { click(menu,stone,6,ContainerInput.SWAP);return; }
+        if(iron<9) {
+            var items=ctx.player().getInventory().getNonEquipmentItems();
+            for(int i=9;i<items.size();i++)if(items.get(i).isEmpty()) { click(menu,i,iron,ContainerInput.SWAP);return; }
+        }
+    }
     private void closeMenu() {
         if(ctx.player()!=null && ownedMenu!=null && ctx.player().containerMenu==ownedMenu)ctx.player().closeContainer();
         ownedMenu=null;pendingSlot=-1;

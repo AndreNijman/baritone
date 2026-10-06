@@ -39,7 +39,9 @@ public final class MobSafetyProcess implements IBaritoneProcess, AbstractGameEve
     private Threat assessed;
     private Mob current;
     private int quietId = -1, quietUntil, lastLookahead, lastReplan, replanWindow;
-    private boolean replanRequested;
+    private boolean replanRequested, emergency;
+    private int emergencySince, rtpCooldownUntil, lastHurt = -10000;
+    private net.minecraft.world.phys.Vec3 emergencyFrom;
     private String replanReason;
     private final java.util.Map<Integer, Integer> replans = new java.util.HashMap<>();
     private double quietDistance;
@@ -151,8 +153,24 @@ public final class MobSafetyProcess implements IBaritoneProcess, AbstractGameEve
         return hidden;
     }
 
+    /** Drowning, in lava, or nearly dead while under attack or burning: the reason, or null. */
+    private String emergencyReason() {
+        var player = ctx.player();
+        if (player.isCreative() || player.isSpectator() || !player.isAlive()) return null;
+        if (player.isUnderWater() && player.getAirSupply() <= player.getMaxAirSupply() * 3 / 10) return "about to drown";
+        if (player.isInLava()) return "in lava";
+        if (player.getHealth() <= 6 && MobSafety.clock() - lastHurt < 60) {
+            if (player.isOnFire()) return "burning on low health";
+            for (Entity entity : (Iterable<Entity>) ctx.entitiesStream()::iterator)
+                if (MobSafety.dangerous(entity, player) && player.distanceTo(entity) < 10) return "low health with " + entity.getName().getString() + " close";
+        }
+        return null;
+    }
+
     @Override public boolean isActive() {
-        if (!MobSafety.enabled() || ctx.player() == null || ctx.world() == null) { reset(); return false; }
+        if (!MobSafety.enabled() || ctx.player() == null || ctx.world() == null) { reset(); emergency = false; return false; }
+        if (emergency) return true;
+        if ((automation || retreating) && MobSafety.clock() >= rtpCooldownUntil && emergencyReason() != null) return true;
         if (retreating) return true;
         if (!automation) return false; // manual play is never taken over
         if (MobSafety.enclosed(ctx)) return false; // boxed in (or a one-wide shaft): breaking out would be worse
@@ -199,6 +217,28 @@ public final class MobSafetyProcess implements IBaritoneProcess, AbstractGameEve
     }
 
     @Override public PathingCommand onTick(boolean calcFailed, boolean isSafeToCancel) {
+        if (!emergency && MobSafety.clock() >= rtpCooldownUntil) {
+            String reason = emergencyReason();
+            if (reason != null) {
+                // Last resort: ask the server for a random teleport and keep still, as teleport warm-ups require.
+                emergency = true; emergencySince = MobSafety.clock(); emergencyFrom = ctx.player().position(); retreating = false; goal = null;
+                rtpCooldownUntil = MobSafety.clock() + 2400;
+                baritone.getInputOverrideHandler().clearAllKeys();
+                ctx.player().connection.sendCommand("rtp");
+                setState("emergency (" + reason + "): sent /rtp, standing still");
+            }
+        }
+        if (emergency) {
+            boolean moved = ctx.player().position().distanceTo(emergencyFrom) > 32;
+            if (moved || MobSafety.clock() - emergencySince > 300) {
+                emergency = false;
+                setState(moved ? "teleported away; resuming" : "no teleport after 15 seconds; resuming");
+                return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
+            }
+            if (ctx.minecraft().gui.screen() != null && MobSafety.clock() - emergencySince == 40) setState("the server opened a menu for /rtp; choose a destination");
+            baritone.getInputOverrideHandler().clearAllKeys();
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
         if (replanRequested && !retreating) {
             replanRequested = false; lastReplan = MobSafety.clock();
             setState("path ahead passes " + replanReason + "; replanning around it");
@@ -252,6 +292,7 @@ public final class MobSafetyProcess implements IBaritoneProcess, AbstractGameEve
     @Override public void onTick(TickEvent event) {
         if (event.getType() == TickEvent.Type.OUT) { reset(); automation = false; return; }
         MobSafety.tick();
+        if (ctx.player() != null && ctx.player().hurtTime > 0) lastHurt = MobSafety.clock();
         if (MobSafety.enabled() && ctx.player() != null && MobSafety.clock() % 5 == 0) {
             var player = ctx.player();
             for (Entity entity : (Iterable<Entity>) ctx.entitiesStream()::iterator) {
@@ -266,7 +307,7 @@ public final class MobSafetyProcess implements IBaritoneProcess, AbstractGameEve
         automation = baritone.getPathingControlManager().mostRecentInControl().filter(process -> process != this).isPresent();
         if (cooldown > 0) cooldown--;
     }
-    @Override public void onPlayerDeath() { reset(); }
+    @Override public void onPlayerDeath() { reset(); emergency = false; }
     @Override public boolean isTemporary() { return true; }
     @Override public double priority() { return 100; }
     @Override public void onLostControl() { reset(); automation = false; }

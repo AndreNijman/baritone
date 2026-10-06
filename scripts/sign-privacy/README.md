@@ -318,6 +318,21 @@ current path are checked; if they would pass within reach of a remembered hunter
 the path is replanned before getting there (at most once every two seconds and
 three times per mob per minute).
 
+Emergency teleport: while a Baritone task runs, if the player is about to drown (under
+water with less than 30% air), in lava, or on three hearts or less within three seconds
+of being hurt with a hostile within ten blocks or while burning, mob safety stops
+everything, sends `/rtp` once and stands still for up to fifteen seconds for the
+teleport (warm-ups require it), then resumes. It waits two minutes before another
+`/rtp`. If the server answers with a menu, it is left for the player.
+
+Station spots never overlap the player's body, a spot the player drifts onto is
+replaced, and the placement click waits until the player stands still. Boxing in
+skips a block it cannot place after 1.5 seconds and clicks every four ticks once the
+aim is within three degrees. With an iron pickaxe, ordinary digging uses the stone
+pickaxe; while mining towards diamonds the iron pickaxe stays out of the hotbar until
+diamond ore is within reach. A spare wooden pickaxe is burned as furnace fuel before
+planks.
+
 ### What was tested (compat.9)
 
 Rendered clean-room trials on the disposable Paper/Grim server (report:
