@@ -144,7 +144,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
                 }
                 if(n!=lastCount) { lastCount=n;progressTick=tick; }
                 if (tick-progressTick>6000) { stop("No resource progress for five minutes; check access to "+stage);return null; }
-                if (gatheringBlocks!=null && Arrays.asList(gatheringBlocks).contains(Blocks.DIAMOND_ORE))manageDiamondTools();
+                if (gatheringBlocks!=null && Arrays.asList(gatheringBlocks).contains(Blocks.DIAMOND_ORE))diamondTools();
                 if (!baritone.getMineProcess().isActive()) {
                     if (++retries>3) { stop("Mining repeatedly failed during "+stage);return null; }
                     baritone.getMineProcess().mine(gatheringBlocks);
@@ -191,6 +191,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
     private PathingCommand gather(String name,Predicate<ItemStack> filter,int quantity,Block... blocks) {
         if(ctx.player().getInventory().getNonEquipmentItems().stream().noneMatch(ItemStack::isEmpty)) { stop("Inventory is full; free space and restart");return null; }
         closeMenu();if(!equipBestPick() || !prepareBuildingBlocks())return pause();
+        if(Arrays.asList(blocks).contains(Blocks.DIAMOND_ORE) && tool(Items.STONE_PICKAXE) && !saved.containsKey(BaritoneAPI.getSettings().autoTool))override(BaritoneAPI.getSettings().autoTool,false);
         mining=true;gathering=filter;gatheringCount=quantity;gatheringBlocks=blocks;lastCount=count(filter);retries=0;
         setStage("Gathering "+name+" ("+lastCount+"/"+quantity+")");
         baritone.getMineProcess().mine(blocks);
@@ -549,38 +550,27 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
     private boolean quietForClicks() {
         return !ctx.minecraft().gameMode.isDestroying() && ctx.player().onGround() && ctx.player().getDeltaMovement().horizontalDistanceSqr()<0.0025;
     }
-    private boolean diamondWithin(int radius) {
-        BlockPos feet=ctx.playerFeet();
-        for(int dx=-radius;dx<=radius;dx++)for(int dy=-radius;dy<=radius;dy++)for(int dz=-radius;dz<=radius;dz++)if(diamond(feet.offset(dx,dy,dz)))return true;
-        return false;
-    }
-    private boolean diamondInReach() {
-        if(ctx.objectMouseOver() instanceof BlockHitResult hit && hit.getType()==HitResult.Type.BLOCK && diamond(hit.getBlockPos()))return true;
-        BlockPos head=BlockPos.containing(ctx.playerHead());
-        for(int dx=-4;dx<=4;dx++)for(int dy=-4;dy<=4;dy++)for(int dz=-4;dz<=4;dz++) {
-            BlockPos p=head.offset(dx,dy,dz);
-            if(diamond(p) && Vec3.atCenterOf(p).distanceToSqr(ctx.playerHead())<20 && RotationUtils.reachable(ctx,p,ctx.playerController().getBlockReachDistance()).isPresent())return true;
-        }
-        return false;
-    }
     /**
-     * Baritone picks the fastest tool in the hotbar. While mining towards diamonds, keep the iron pickaxe out of the hotbar so
-     * stone and dirt use the stone pickaxe, and bring it in only when diamond ore (which needs iron) is within reach.
+     * Save the iron pickaxe's durability while still mining diamond ore with it. Both pickaxes go into the hotbar once
+     * (inventory clicks only while standing still); during the diamond stage autoTool is off and the hotbar slot is chosen
+     * from the block under the crosshair before it is broken: iron for diamond ore, stone for everything else.
+     * Changing the held tool mid-break would make the server undo the break, so it is never done then.
      */
-    private void manageDiamondTools() {
-        // Swapping the held tool mid-break makes the server time the break differently and undo it (a ghost block).
-        if(!readyToClick() || !tool(Items.STONE_PICKAXE) || !quietForClicks())return;
+    private void diamondTools() {
         int iron=slotOf(Items.IRON_PICKAXE),stone=slotOf(Items.STONE_PICKAXE);
-        if(iron<0 || stone<0)return;
-        var menu=ctx.player().inventoryMenu;
-        if(diamondInReach()) { if(iron>=9)click(menu,iron,7,ContainerInput.SWAP);return; }
-        // Only put it away once no diamond is anywhere near, so it does not flap at the edge of reach.
-        if(iron<9 && diamondWithin(8))return;
-        if(stone>=9) { click(menu,stone,6,ContainerInput.SWAP);return; }
-        if(iron<9) {
-            var items=ctx.player().getInventory().getNonEquipmentItems();
-            for(int i=9;i<items.size();i++)if(items.get(i).isEmpty()) { click(menu,i,iron,ContainerInput.SWAP);return; }
+        if(iron<0)return;
+        if(iron>=9 || stone>=9) {
+            if(readyToClick() && quietForClicks())click(ctx.player().inventoryMenu,iron>=9 ? iron : stone,iron>=9 ? 7 : 6,ContainerInput.SWAP);
+            if(iron>=9)return;
         }
+        if(ctx.minecraft().gameMode.isDestroying() || !(ctx.objectMouseOver() instanceof BlockHitResult hit) || hit.getType()!=HitResult.Type.BLOCK)return;
+        var inventory=ctx.player().getInventory();
+        ItemStack held=inventory.getNonEquipmentItems().get(inventory.getSelectedSlot());
+        int want;
+        if(diamond(hit.getBlockPos()))want=iron;
+        else if(stone>=0 && stone<9 && (held.is(Items.IRON_PICKAXE) || !held.is(ItemTags.PICKAXES) && !buildingBlock(held)))want=stone;
+        else return;
+        if(inventory.getSelectedSlot()!=want) { inventory.setSelectedSlot(want);ctx.playerController().syncHeldItem(); }
     }
     private void closeMenu() {
         if(ctx.player()!=null && ownedMenu!=null && ctx.player().containerMenu==ownedMenu)ctx.player().closeContainer();

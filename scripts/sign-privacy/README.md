@@ -323,18 +323,21 @@ water with less than 30% air), in lava, near a creeper (within seven blocks, nin
 swelling), or on three hearts or less within three seconds
 of being hurt with a hostile within ten blocks or while burning, mob safety stops
 everything, sends `/rtp` once and stands still for up to fifteen seconds for the
-teleport (warm-ups require it), then resumes. It waits two minutes before another
+teleport (warm-ups require it), then resumes. In lava it first scrambles to the nearest
+dry footing within three blocks (even while `/rtp` is on cooldown), and under water it
+swims up; standing still there is fatal long before a teleport. It waits two minutes before another
 `/rtp`. If the server answers with a menu, it is left for the player.
 
 Station spots never overlap the player's body, a spot the player drifts onto is
 replaced, and the placement click waits until the player stands still. Boxing in
 skips a block it cannot place after 1.5 seconds and clicks every four ticks once the
 aim is within three degrees. With an iron pickaxe, ordinary digging uses the stone
-pickaxe; while mining towards diamonds the iron pickaxe stays out of the hotbar until
-diamond ore is within reach, and goes back out only once no diamond is within eight
-blocks. These tool swaps, and moving dirt into the hotbar, happen only while the player
-stands still and is not breaking a block: changing the held tool mid-break made the
-server time the break differently and restore the block (a ghost block). A spare
+pickaxe: during the diamond stage both pickaxes are moved into the hotbar once (while
+standing still), Baritone's autoTool is turned off, and the hotbar slot is chosen from
+the block under the crosshair before it is broken (iron for diamond ore, stone
+otherwise). Inventory clicks happen only while standing still and not breaking a block,
+and the held tool never changes mid-break: that made the server time the break
+differently and restore the block (a ghost block). A spare
 wooden pickaxe is burned as furnace fuel before planks.
 
 ### What was tested (compat.9)

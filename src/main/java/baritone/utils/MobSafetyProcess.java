@@ -12,6 +12,8 @@ import baritone.api.process.PathingCommandType;
 import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.Helper;
 import baritone.api.utils.IPlayerContext;
+import baritone.api.utils.RotationUtils;
+import baritone.api.utils.input.Input;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
@@ -154,6 +156,22 @@ public final class MobSafetyProcess implements IBaritoneProcess, AbstractGameEve
         return hidden;
     }
 
+    /** Nearest spot within three blocks with free, fluid-free feet and head space over a solid, non-lava floor. */
+    private BlockPos nearestDry() {
+        var world = ctx.world();
+        BlockPos feet = ctx.playerFeet(), best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) for (int dy = -1; dy <= 2; dy++) {
+            BlockPos p = feet.offset(dx, dy, dz);
+            if (!world.getFluidState(p).isEmpty() || !world.getFluidState(p.above()).isEmpty() || !world.getFluidState(p.below()).isEmpty()) continue;
+            if (!world.getBlockState(p).getCollisionShape(world, p).isEmpty() || !world.getBlockState(p.above()).getCollisionShape(world, p.above()).isEmpty()) continue;
+            if (world.getBlockState(p.below()).getCollisionShape(world, p.below()).isEmpty()) continue;
+            double distance = p.distSqr(feet);
+            if (distance < bestDistance) { bestDistance = distance; best = p; }
+        }
+        return best;
+    }
+
     /** Drowning, in lava, or nearly dead while under attack or burning: the reason, or null. */
     private String emergencyReason() {
         var player = ctx.player();
@@ -177,7 +195,7 @@ public final class MobSafetyProcess implements IBaritoneProcess, AbstractGameEve
     @Override public boolean isActive() {
         if (!MobSafety.enabled() || ctx.player() == null || ctx.world() == null) { reset(); emergency = false; return false; }
         if (emergency) return true;
-        if ((automation || retreating) && MobSafety.clock() >= rtpCooldownUntil && emergencyReason() != null) return true;
+        if ((automation || retreating) && emergencyReason() != null && (MobSafety.clock() >= rtpCooldownUntil || ctx.player().isInLava())) return true;
         if (retreating) return true;
         if (!automation) return false; // manual play is never taken over
         if (MobSafety.enclosed(ctx)) return false; // boxed in (or a one-wide shaft): breaking out would be worse
@@ -224,15 +242,19 @@ public final class MobSafetyProcess implements IBaritoneProcess, AbstractGameEve
     }
 
     @Override public PathingCommand onTick(boolean calcFailed, boolean isSafeToCancel) {
-        if (!emergency && MobSafety.clock() >= rtpCooldownUntil) {
+        if (!emergency) {
             String reason = emergencyReason();
-            if (reason != null) {
-                // Last resort: ask the server for a random teleport and keep still, as teleport warm-ups require.
+            boolean canTeleport = MobSafety.clock() >= rtpCooldownUntil;
+            if (reason != null && (canTeleport || ctx.player().isInLava())) {
+                // Last resort: ask the server for a random teleport and keep still, as teleport warm-ups require
+                // (after first getting out of lava or water, where standing still is fatal).
                 emergency = true; emergencySince = MobSafety.clock(); emergencyFrom = ctx.player().position(); retreating = false; goal = null;
-                rtpCooldownUntil = MobSafety.clock() + 2400;
                 baritone.getInputOverrideHandler().clearAllKeys();
-                ctx.player().connection.sendCommand("rtp");
-                setState("emergency (" + reason + "): sent /rtp, standing still");
+                if (canTeleport) {
+                    rtpCooldownUntil = MobSafety.clock() + 2400;
+                    ctx.player().connection.sendCommand("rtp");
+                    setState("emergency (" + reason + "): sent /rtp");
+                } else setState("emergency (" + reason + "): escaping (/rtp on cooldown)");
             }
         }
         if (emergency) {
@@ -243,7 +265,21 @@ public final class MobSafetyProcess implements IBaritoneProcess, AbstractGameEve
                 return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
             }
             if (ctx.minecraft().gui.screen() != null && MobSafety.clock() - emergencySince == 40) setState("the server opened a menu for /rtp; choose a destination");
-            baritone.getInputOverrideHandler().clearAllKeys();
+            var input = baritone.getInputOverrideHandler();
+            input.clearAllKeys();
+            var player = ctx.player();
+            if (player.isInLava()) {
+                // Scramble to the nearest dry footing; staying put in lava is fatal long before a teleport.
+                BlockPos dry = nearestDry();
+                if (dry != null) {
+                    baritone.getLookBehavior().updateTarget(RotationUtils.calcRotationFromVec3d(ctx.playerHead(), Vec3.atBottomCenterOf(dry).add(0, 0.6, 0), ctx.playerRotations()), false);
+                    input.setInputForceState(Input.MOVE_FORWARD, true);
+                    input.setInputForceState(Input.SPRINT, true);
+                }
+                input.setInputForceState(Input.JUMP, true);
+            } else if (player.isUnderWater()) {
+                input.setInputForceState(Input.JUMP, true); // swim up for air
+            }
             return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
         }
         if (replanRequested && !retreating) {
