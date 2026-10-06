@@ -27,7 +27,7 @@ def main():
     parser.add_argument("--libraries", type=Path, required=True)
     parser.add_argument("--fabric-loader", type=Path, help="Verified supported Fabric 0.19.5 JAR; otherwise use the cached 0.19.3 test override")
     parser.add_argument("--fabric-runtime", action="store_true", help="Also check the Mixin using --fabric-loader or the explicit cached-loader test override")
-    parser.add_argument("--jdk", type=Path, default=Path("/usr/lib/jvm/java-27"))
+    parser.add_argument("--jdk", type=Path, default=Path("/usr/lib/jvm/java-25-openjdk"))
     options = parser.parse_args()
     if not options.jdk.resolve().is_relative_to("/usr"):
         parser.error("The sandbox expects an existing JDK under /usr")
@@ -86,7 +86,7 @@ echo 'Reachability API compiles independently of the new main implementation'
 fi
 "$PATCH_JDK/bin/javac" -J-Xmx256m -J-XX:ActiveProcessorCount=2 --release 25 -cp "$PATCH_CP" -d /scratch/sourcecheck /source/src/main/java/baritone/utils/accessor/IPlayerControllerMP.java /source/src/main/java/baritone/utils/BlockBreakHelper.java /source/src/main/java/baritone/utils/GradualLook.java /source/src/main/java/baritone/utils/GradualLookCommand.java /source/src/api/java/baritone/api/utils/RotationUtils.java /source/src/api/java/baritone/api/behavior/look/IAimProcessor.java
 "$PATCH_JDK/bin/javac" -J-Xmx512m -J-XX:ActiveProcessorCount=2 --release 25 -cp "$PATCH_CP" -d /scratch/classes /source/scripts/compatibility/ActualRuntimeTest.java /source/scripts/compatibility/GradualLookTest.java
-"$PATCH_JDK/bin/java" -Djava.io.tmpdir=/scratch/tmp -Djdk.net.hosts.file=/scratch/etc/hosts -Xmx512m -XX:ActiveProcessorCount=2 -XX:CompressedClassSpaceSize=128m -XX:ReservedCodeCacheSize=128m --sun-misc-unsafe-memory-access=allow --enable-final-field-mutation=ALL-UNNAMED \
+"$PATCH_JDK/bin/java" -Djava.io.tmpdir=/scratch/tmp -Djdk.net.hosts.file=/scratch/etc/hosts -Xmx512m -XX:ActiveProcessorCount=2 -XX:CompressedClassSpaceSize=128m -XX:ReservedCodeCacheSize=128m --sun-misc-unsafe-memory-access=allow \
   -cp "/scratch/classes:$PATCH_CP" ActualRuntimeTest
 "$PATCH_JDK/bin/java" -Xmx256m -XX:ActiveProcessorCount=2 -cp "/scratch/classes:$PATCH_CP" GradualLookTest
 '''
@@ -107,13 +107,13 @@ fi
 "$PATCH_JDK/bin/javac" -J-Xmx256m --release 25 -cp "$PATCH_CP:$PATCH_FABRIC_CP" -d /scratch/launcher /source/scripts/compatibility/KnotSmokeTest.java
 "$PATCH_JDK/bin/javac" -J-Xmx256m --release 25 -cp "$PATCH_CP:$PATCH_FABRIC_CP" -d /scratch/source-check /source/src/launch/java/baritone/launch/mixins/MixinSignEditScreen.java
 "$PATCH_JDK/bin/javac" -J-Xmx256m --release 25 -cp "$PATCH_CP" -d /scratch/game-tests /source/scripts/compatibility/SignRoundTripTest.java
-"$PATCH_JDK/bin/java" -Djava.io.tmpdir=/scratch/tmp -Djdk.net.hosts.file=/scratch/etc/hosts -Dmixin.debug.export=true -Dmixin.debug.export.decompile=false -Djava.awt.headless=true --sun-misc-unsafe-memory-access=allow --enable-final-field-mutation=ALL-UNNAMED -Xmx512m -XX:ActiveProcessorCount=2 -XX:CompressedClassSpaceSize=128m -XX:ReservedCodeCacheSize=128m \
+"$PATCH_JDK/bin/java" -Djava.io.tmpdir=/scratch/tmp -Djdk.net.hosts.file=/scratch/etc/hosts -Dmixin.debug.export=true -Dmixin.debug.export.decompile=false -Djava.awt.headless=true --sun-misc-unsafe-memory-access=allow -Xmx512m -XX:ActiveProcessorCount=2 -XX:CompressedClassSpaceSize=128m -XX:ReservedCodeCacheSize=128m \
  -cp "/scratch/launcher:$PATCH_CP:$PATCH_FABRIC_CP" KnotSmokeTest
 '''
     if options.upstream_control:
         shell += r'''
 cp /inputs/control.jar /scratch/game/mods/baritone.jar
-"$PATCH_JDK/bin/java" -Djava.io.tmpdir=/scratch/tmp -Djdk.net.hosts.file=/scratch/etc/hosts -Djava.awt.headless=true --sun-misc-unsafe-memory-access=allow --enable-final-field-mutation=ALL-UNNAMED -Xmx512m -XX:ActiveProcessorCount=2 -XX:CompressedClassSpaceSize=128m -XX:ReservedCodeCacheSize=128m \
+"$PATCH_JDK/bin/java" -Djava.io.tmpdir=/scratch/tmp -Djdk.net.hosts.file=/scratch/etc/hosts -Djava.awt.headless=true --sun-misc-unsafe-memory-access=allow -Xmx512m -XX:ActiveProcessorCount=2 -XX:CompressedClassSpaceSize=128m -XX:ReservedCodeCacheSize=128m \
  -cp "/scratch/launcher:/inputs/control.jar:$PATCH_GAME_CP:$PATCH_FABRIC_CP" KnotSmokeTest --upstream-control
 '''
     control_mount = ["--ro-bind", str(options.upstream_control.resolve()), "/inputs/control.jar"] if options.upstream_control else []

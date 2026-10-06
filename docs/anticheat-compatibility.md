@@ -444,3 +444,80 @@ its tested SHA-256, archive metadata and one standalone Baritone JAR. Settings
 remain byte-identical, including allowSprint/allowParkour true. The previous
 compat.5 JAR and settings are backed up outside mods at
 `.codex-backups/water-compat.6/`. Restart Minecraft and use `#gradual status`.
+
+
+## Persistent realism and autonomous pickaxe — 2026-10-06 (compat.7)
+
+`#realistic` toggles the existing mode. Explicit on/off/toggle/status and the
+`#gradual` alias are supported; bare gradual still reports status. The preference
+is saved under baritone/realistic-movement.properties and loaded at startup. On
+snapshots the four prior preset values; off restores them if still unchanged.
+Sprint, parkour, the approved 0.35 easing and dry/water travel calculations are
+preserved. Off disables gradual aiming, heading correction and the matching-view
+gate while retaining the sign privacy and Minecraft 26.3 input/Punch corrections.
+
+`#diamondpickaxe [start|status|stop]` coordinates normal survival actions from
+current inventory. With no tools it reserves four logs, crafts planks, sticks,
+a table and wooden/stone picks, mines raw iron and furnace cobblestone, places
+a furnace, smelts iron with coal/charcoal or planks, crafts an iron pick, mines
+three diamonds and crafts a diamond pickaxe. Manual recipe grids do not depend
+on recipe-book unlocking. Existing tools/supplies skip earlier tiers. Ordinary
+upstream mining and pathfinding handle resources; normal inventory clicks and
+block interactions handle crafting/stations. No server items or recipes are granted.
+
+The task temporarily enables mining/placement and exploration, disables competing
+inventory management and protects its stations from its own mining. It restores
+unchanged task settings on stop/completion/death/disconnect. Closing an owned
+inventory or station menu uses Minecraft's normal return-of-ingredients behavior.
+Use diamondpickaxe stop or stop to cancel. Resources must exist and be reachable;
+food/combat/dimension travel and fully submerged planning are not added. Repeated
+mining failure, full inventory or sustained craft/smelt failure stops with a message.
+
+Reproducible gameplay evidence is in the separate benchmark's
+reports/2026-10-06-diamond.md and JSON. Failed prototypes and setup errors are
+retained. Early issues included returning cursor items to armour slots, forgetting
+a newly placed station after its inventory item was consumed, and reserving too
+little wood for later recipes/fuel. Server crafting and furnace events, plus
+final server inventory, distinguish real survival completion from client prediction.
+The build overlay now supports an explicit separate output path, and benchmark
+inputs are hashed before/after each run to reject changed artifacts.
+
+Compat.7 uses the installed Java 25 toolchain; the unused JDK 26+ final-field flag
+was removed from the runtime harness because Java 25 rejects it. The overlay still
+changes eight original classes and two metadata files; ten new classes are added
+and bundled libraries are unchanged. This is an offline compiled overlay, not a
+complete upstream Gradle rebuild. No universal anti-cheat or observer guarantee.
+
+Exact compat.7 SHA-256:
+`24491316fda3197b88cc2ce246b57bd8522166c681ca77e6ad38dc3a769aaaa4`.
+Empty-inventory on and saved-off runs each finish with one server-confirmed
+diamond pickaxe, all eight recipe types and three iron smelts, with an empty
+cursor and inactive miner. A supplied iron-pick/table/sticks case skips the
+earlier tiers. Cancellation during a four-log cursor pickup returns all four
+to inventory, with the other two fixture logs still in the tree. The final off
+and cancel cases verify restoration from allowBreak/allowPlace false and
+allowInventory true after temporarily applying true/true/false. Bare realistic
+toggle, persisted-off startup, preset restoration and sprint/parkour preservation
+pass. The full on/off cases log no flags; supplied and earlier trials retain
+startup flags as recorded. All final cases reject changing input artifacts.
+
+The exact JAR also passes 142,626 geometry/steering assertions, 123 real components,
+128 actual keyboard combinations, supported Fabric/Mixin initialization, 100
+patched and 100 stock sign round trips and independent reachability API compile.
+A separate output-path rebuild produces the identical tested JAR without changing
+the default output.
+
+Dry switchbacks complete in 130 movement ticks over 34.73 blocks, with zero
+replans, backtracks or off-path ticks; one SprintE wall flag remains. The trench
+sprint jump completes in 50 movement ticks with 48 sprint and 11 airborne ticks
+and no logged flags. The final on/off progression trials also log no flags;
+startup BadPacketsR remains in supplied/cancellation trials. Eleven attempts,
+including failures and one invalidated input-mutation trial, are retained.
+
+Installed in the inactive Modrinth Fabric 26.3 profile, after verifying the exact
+tested hash, metadata and one standalone Baritone JAR. The existing settings
+remain byte-identical (SHA-256
+3930b507c6e966a2eaaa71b393403072a330d870a9d0604de9f2c40e03907a34).
+Compat.6, settings and a verified manifest are backed up outside mods at
+.codex-backups/diamond-compat.7/. Restart the profile, use realistic status and
+diamondpickaxe in a world with reachable resources.

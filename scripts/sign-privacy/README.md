@@ -1,16 +1,16 @@
-# Baritone 1.20.0: sign privacy, movement, mining and gradual aiming
+# Baritone 1.20.0: sign privacy, movement and autonomous pickaxe crafting
 
 Target: **Minecraft 26.3, Fabric Loader 0.19.5 or later, Java 25 or later**.
 
 The candidate includes the sign privacy patch and the Minecraft 26.3 keyboard
 input and mining corrections described in `docs/anticheat-compatibility.md`.
 
-The installable JAR is `dist/baritone-api-fabric-1.20.0-compat.6.jar`.
+The installable JAR is `dist/baritone-api-fabric-1.20.0-compat.7.jar`.
 Replace the existing Baritone JAR in the instance's `mods` directory with this file.
 Restart Minecraft, and run `#help` to confirm Baritone loads. Only one Baritone JAR
 should be installed. This is the API release with its normal commands and bundled
 nether pathfinder. Eight original classes are changed: input, mining, core initialization, look behavior,
-both aim processors, geometric reachability and its API. Six classes are added.
+both aim processors, geometric reachability and its API. Ten classes are added.
 Every other original class and nested JAR is preserved byte for byte.
 
 ## What the patch does
@@ -75,7 +75,7 @@ resource, which alone is not proof that the corresponding mod is installed.
   help/goto/stop/mine/build/follow command registrations in the headless runtime.
 - Compiled the included mixin source against the real game and Mixin API.
 - Checked archive integrity: eight original classes and two metadata files change.
-  Six classes are added; bundled libraries are unchanged.
+  Ten classes are added; bundled libraries are unchanged.
 - Passed 142,626 geometry and steering assertions covering wraparound, angle caps, pitch limits,
   mouse-sensitivity increments, convergence and disabling the controller.
 - Compiled the changed reachability API independently of the new main implementation.
@@ -116,10 +116,12 @@ flags remain in some ordinary profiles; the conservative trial also has a startu
 BadPacketsR flag. Full details are in `docs/anticheat-compatibility.md` and the
 separate clean-room report. The private server's exact rejection remains unknown.
 
-## Gradual ground aiming (compat.6)
+## Persistent realistic movement (compat.7)
 
-The controller is enabled on restart. Run `#gradual status`, `#gradual on`, or
-`#gradual off`. Enabling it applies these settings:
+The controller defaults on. `#realistic` toggles it; `#realistic on`,
+`#realistic off` and `#realistic status` set or inspect it. The `#gradual` alias
+remains available (without arguments, it reports status). The choice is saved in
+`baritone/realistic-movement.properties` and survives restart. Enabling applies:
 
 ```text
 freeLook false
@@ -131,8 +133,10 @@ walkWhileBreaking false
 This keeps the camera aligned with transmitted rotations and makes breaking
 stationary. Sprint and parkour settings are preserved; the mode does not change
 either setting. The installed profile enables both per the requested preference.
-Turning the controller off leaves those settings as currently
-configured; it does not restore earlier settings. The toggle is session-only.
+Turning the controller off restores the four settings from before activation,
+provided they still have the preset value. Deliberate changes made while enabled
+are preserved. It also disables eased turns, heading correction and the
+matching-view mining gate. Sign privacy and normal 26.3 mining/input fixes remain.
 Elytra flight retains its ordinary processor behavior. Other settings can still
 be changed normally, so overriding these presets changes the tested behavior.
 
@@ -163,6 +167,39 @@ The clean-room gameplay report is
 It records received rotation measurements, water crossings, dry-land regressions,
 unsuccessful controls, the submerged planning limitation and remaining flags. There is no human-observer study and no
 proof against the undisclosed private stack.
+
+## Autonomous diamond pickaxe
+
+Run `#diamondpickaxe` in a normal survival world. It reuses supplies you already
+have, and otherwise reserves four logs before leaving the first tree, crafts planks,
+sticks and a crafting table,
+crafts wooden and stone pickaxes, mines raw iron and furnace cobblestone, places
+a furnace, smelts iron using available coal/charcoal or gathered planks, crafts an
+iron pickaxe, mines three diamonds and crafts a diamond pickaxe. It uses normal
+survival interactions and inventory clicks; no recipe-book unlock is needed.
+
+Use `#diamondpickaxe status` to inspect the current stage, and
+`#diamondpickaxe stop` or `#stop` to cancel. Start with a clear crafting cursor
+and a closed container. The task temporarily enables mining/placement and
+disables competing inventory management, then restores unchanged settings on
+completion or cancellation. Sprint, parkour and the realistic toggle are retained.
+Placed stations remain in the world for reuse by the player.
+
+Resources must exist and be reachable in the world. Exploration uses upstream
+Baritone mining; it does not add submerged path planning, food, combat or
+dimension travel. Death, disconnect, a full inventory, repeated mining failure
+or a sustained crafting/smelting stall stops the task with a message. A server
+that rejects the ordinary actions can prevent completion. Restarting the command
+reuses surviving materials and tools; a mission is not resumed across reconnects.
+
+The exact compat.7 artifact completed the empty-inventory chain with realism both
+on and off, including every server-confirmed recipe and three iron smelts.
+An equipped-inventory trial reused an iron pickaxe and skipped earlier tiers.
+Cancellation with four logs on the cursor returned them to inventory and restored
+three deliberately different starting settings. Saved-off startup and the bare
+`#realistic` toggle were exercised in the rendered game. Full results, failed
+prototypes and remaining flags are in
+`../andre-anticheat/reports/2026-10-06-diamond.md` from the project root.
 
 ## Validate on your server
 
@@ -200,7 +237,7 @@ python3 scripts/sign-privacy/build_overlay.py \
   --upstream /path/to/baritone-api-fabric-1.20.0.jar \
   --minecraft /path/to/minecraft-26.3.jar \
   --asm /path/to/asm-9.9.jar \
-  --jdk /usr/lib/jvm/java-27 \
+  --jdk /usr/lib/jvm/java-25-openjdk \
   --metadata /path/to/26.3.json \
   --libraries /path/to/launcher/meta/libraries
 ```
@@ -216,7 +253,7 @@ Run the real-runtime tests with already cached Linux launcher libraries:
 python3 scripts/compatibility/test_runtime.py \
   --minecraft /path/to/minecraft-26.3.jar \
   --metadata /path/to/26.3.json \
-  --candidate dist/baritone-api-fabric-1.20.0-compat.6.jar \
+  --candidate dist/baritone-api-fabric-1.20.0-compat.7.jar \
   --libraries /path/to/launcher/meta/libraries \
   --fabric-runtime \
   --upstream-control /path/to/baritone-api-fabric-1.20.0.jar

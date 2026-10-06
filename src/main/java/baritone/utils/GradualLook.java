@@ -3,6 +3,7 @@ package baritone.utils;
 
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
+import baritone.api.utils.Helper;
 import baritone.api.behavior.look.IAimProcessor;
 import baritone.api.utils.IPlayerContext;
 import baritone.api.utils.input.Input;
@@ -19,26 +20,56 @@ import java.util.WeakHashMap;
 public final class GradualLook {
     public static final float MAX_YAW = 12f, MAX_PITCH = 8f;
     private static volatile boolean enabled = true;
+    private static boolean preferenceLoaded;
+    private static boolean[] previousSettings;
     private static final Map<IPlayerContext, Rotation> interactions = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<IPlayerContext, Rotation> tickRotations = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<IPlayerContext, Rotation> travelTargets = Collections.synchronizedMap(new WeakHashMap<>());
     private GradualLook() {}
     public static boolean enabled() { return enabled; }
     public static void enable(boolean value) {
+        var settings = value || previousSettings != null ? BaritoneAPI.getSettings() : null;
+        if (value && previousSettings == null) previousSettings = new boolean[]{settings.freeLook.value, settings.blockFreeLook.value, settings.smoothLook.value, settings.walkWhileBreaking.value};
         enabled = value;
         interactions.clear();
         tickRotations.clear();
         travelTargets.clear();
         if (value) {
-            var settings = BaritoneAPI.getSettings();
             settings.freeLook.value = false;
             settings.blockFreeLook.value = false;
             settings.smoothLook.value = false;
             settings.walkWhileBreaking.value = false;
+        } else if (previousSettings != null) {
+            if (!settings.freeLook.value) settings.freeLook.value = previousSettings[0];
+            if (!settings.blockFreeLook.value) settings.blockFreeLook.value = previousSettings[1];
+            if (!settings.smoothLook.value) settings.smoothLook.value = previousSettings[2];
+            if (!settings.walkWhileBreaking.value) settings.walkWhileBreaking.value = previousSettings[3];
+            previousSettings = null;
         }
     }
+    public static void savePreference(IPlayerContext context) {
+        try {
+            var file = context.minecraft().gameDirectory.toPath().resolve("baritone/realistic-movement.properties");
+            java.nio.file.Files.createDirectories(file.getParent());
+            var temporary = file.resolveSibling("realistic-movement.properties.tmp");
+            java.nio.file.Files.writeString(temporary, "enabled=" + enabled + "\n");
+            java.nio.file.Files.move(temporary, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (java.io.IOException error) { Helper.HELPER.logDirect("Could not save realistic movement: " + error.getMessage()); }
+    }
     public static void register(IBaritone baritone) {
+        if (!preferenceLoaded) {
+            preferenceLoaded = true;
+            var file = baritone.getPlayerContext().minecraft().gameDirectory.toPath().resolve("baritone/realistic-movement.properties");
+            try {
+                if (java.nio.file.Files.isRegularFile(file)) {
+                    var properties = new java.util.Properties();
+                    try (var reader = java.nio.file.Files.newBufferedReader(file)) { properties.load(reader); }
+                    enabled = Boolean.parseBoolean(properties.getProperty("enabled", "true"));
+                }
+            } catch (java.io.IOException error) { Helper.HELPER.logDirect("Could not read realistic movement preference; using default."); }
+        }
         baritone.getCommandManager().getRegistry().register(new GradualLookCommand(baritone));
+        baritone.getCommandManager().getRegistry().register(new DiamondPickaxeCommand(baritone));
         if (enabled) enable(true);
     }
     public static void beginTick(IPlayerContext context) {
