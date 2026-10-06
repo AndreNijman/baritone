@@ -147,6 +147,7 @@ public final class MobSafetyProcess implements IBaritoneProcess, AbstractGameEve
         if (!MobSafety.enabled() || ctx.player() == null || ctx.world() == null) { reset(); return false; }
         if (retreating) return true;
         if (!automation) return false; // manual play is never taken over
+        if (MobSafety.enclosed(ctx)) return false; // boxed in (or a one-wide shaft): breaking out would be worse
         Threat threat = assess(false);
         return threat != null && (cooldown == 0 || threat.imminent());
     }

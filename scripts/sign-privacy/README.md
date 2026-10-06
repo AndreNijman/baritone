@@ -282,6 +282,29 @@ stone within twelve blocks below (preferring directly underneath) rather than
 walking to distant exposed stone, falling back to ordinary mining if there is none,
 planning fails three times, or no cobblestone arrives for a minute.
 
+## Food, shelter, wood and table reuse (compat.9)
+
+`#autoeat [on|off|toggle|status]` (default on, saved in `baritone/auto-eat.properties`)
+eats during any Baritone task when hunger drops to 14 (or when hurt), until hunger
+reaches 18 (20 when hurt). It picks the most filling safe food, never spider eyes,
+pufferfish, poisonous potatoes, chorus fruit, suspicious stew or golden apples, and
+rotten flesh or raw chicken only when starving. It pauses the task, looks at the
+floor so the use click cannot open a station, and holds use until done. During
+`#diamondpickaxe`, with no food it hunts the nearest adult cow, pig, sheep, chicken
+or rabbit within 48 blocks: it attacks only with the crosshair on the animal and a
+full attack charge (the vanilla attack, swing and Punch sequence), collects the
+meat, and stops after four food items or a minute. Mob safety outranks it.
+
+Before using a furnace, or a crafting table while hostiles are near, `#diamondpickaxe`
+stands beside the station and fills open spaces around its feet and head with dirt,
+the station forming one wall; a roof is added only where something at roof height can
+hold it. Mob safety does not flee from inside such a box (or a one-wide shaft). The
+dirt buffer is now sixteen blocks, refilled below eight. Wood trips gather at least
+four logs, and eight before the first pickaxe, so plank fuel does not run out.
+
+Before crafting or placing a crafting table it uses any table within sixteen blocks.
+It only ever picks up tables it placed itself.
+
 ### What was tested (compat.9)
 
 Rendered clean-room trials on the disposable Paper/Grim server (report:

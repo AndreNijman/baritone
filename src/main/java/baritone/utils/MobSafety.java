@@ -99,6 +99,17 @@ public final class MobSafety {
         return entity instanceof Mob mob && hostile(entity) ? Math.max(fallback, profile(mob).radius()) : fallback;
     }
 
+    /** Walls on all four sides at feet and head height: staying put is safer than breaking out to flee. */
+    public static boolean enclosed(IPlayerContext ctx) {
+        var world = ctx.world();
+        var feet = ctx.playerFeet();
+        for (int dy = 0; dy <= 1; dy++) for (var d : net.minecraft.core.Direction.Plane.HORIZONTAL) {
+            var p = feet.relative(d).above(dy);
+            if (world.getBlockState(p).getCollisionShape(world, p).isEmpty()) return false;
+        }
+        return true;
+    }
+
     public static boolean enabled() { return enabled; }
 
     public static void enable(boolean value) {

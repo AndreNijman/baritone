@@ -44,6 +44,8 @@ CLASSES = [
     "baritone/cb.class",
     "baritone/dt.class",
     "baritone/utils/WaterPassage.class",
+    "baritone/utils/AutoFood.class",
+    "baritone/utils/AutoFoodCommand.class",
 ]
 
 
@@ -88,7 +90,7 @@ JAVA_FLAGS='-Xmx256m -XX:CompressedClassSpaceSize=64m -XX:ReservedCodeCacheSize=
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar PatchMobAvoidance /inputs/upstream.jar /scratch/classes
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar PatchWaterPassage /inputs/upstream.jar /scratch/classes
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar PatchPlacementAim /inputs/upstream.jar /scratch/classes
-"$PATCH_JDK/bin/javac" $JAVAC_FLAGS -proc:none --release 25 -cp "$LOOK_CP" -d /scratch/classes /source/src/main/java/baritone/utils/StopHotkey.java /source/src/main/java/baritone/utils/GradualLook.java /source/src/main/java/baritone/utils/GradualLookCommand.java /source/src/main/java/baritone/utils/DiamondPickaxeCommand.java /source/src/main/java/baritone/utils/DiamondPickaxeProcess.java /source/src/main/java/baritone/utils/DiamondPickaxeRecipes.java /source/src/main/java/baritone/utils/MobSafety.java /source/src/main/java/baritone/utils/MobSafetyCommand.java /source/src/main/java/baritone/utils/MobSafetyProcess.java /source/src/main/java/baritone/utils/WaterPassage.java
+"$PATCH_JDK/bin/javac" $JAVAC_FLAGS -proc:none --release 25 -cp "$LOOK_CP" -d /scratch/classes /source/src/main/java/baritone/utils/StopHotkey.java /source/src/main/java/baritone/utils/GradualLook.java /source/src/main/java/baritone/utils/GradualLookCommand.java /source/src/main/java/baritone/utils/DiamondPickaxeCommand.java /source/src/main/java/baritone/utils/DiamondPickaxeProcess.java /source/src/main/java/baritone/utils/DiamondPickaxeRecipes.java /source/src/main/java/baritone/utils/MobSafety.java /source/src/main/java/baritone/utils/MobSafetyCommand.java /source/src/main/java/baritone/utils/MobSafetyProcess.java /source/src/main/java/baritone/utils/WaterPassage.java /source/src/main/java/baritone/utils/AutoFood.java /source/src/main/java/baritone/utils/AutoFoodCommand.java
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar PatchGradualLook /inputs/upstream.jar /scratch/classes
 "$PATCH_JDK/bin/javac" $JAVAC_FLAGS --release 25 -cp /scratch/classes -d /scratch/tests $(find /source/scripts/sign-privacy/fixture -name '*.java')
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tests:/scratch/classes baritone.launch.privacy.SignTextPrivacyTest
@@ -152,6 +154,7 @@ PY
                 config["custom"]["mobsafety"] = "Hostile-only path avoidance and retreat from nearby hostiles during Baritone tasks; persistent avoidmobs toggle"
                 config["custom"]["waterpassage"] = "Shallow horizontally flowing water is walkable and wet two-high entries float only to the floor (lake-fed tunnels)"
                 config["custom"]["placementaim"] = "Placement checks use the eventual aim so realistic turning still finds the placement face"
+                config["custom"]["autoeat"] = "Eats when hungry during Baritone tasks; hunts farm animals during diamondpickaxe when out of food"
                 config["custom"]["stophotkey"] = "Numpad 9 executes stop, including in crafting screens"
                 config["custom"]["miningcompatibility"] = "Minecraft 26.3 normal Punch packets and held-item swing animation"
                 data = (json.dumps(config, indent=2) + "\n").encode()
@@ -191,7 +194,7 @@ PY
     source_files.update(["src/launch/java/baritone/launch/mixins/MixinSignEditScreen.java","src/launch/java/baritone/launch/mixins/MixinKeyboardHandler.java","src/main/java/baritone/utils/StopHotkey.java"])
     source_files.update(str(p.relative_to(ROOT)) for p in (ROOT / "src/main/java/baritone/utils").glob("DiamondPickaxe*.java"))
     source_files.update(str(p.relative_to(ROOT)) for p in (ROOT / "src/main/java/baritone/utils").glob("MobSafety*.java"))
-    source_files.add("src/main/java/baritone/utils/WaterPassage.java")
+    source_files.update(["src/main/java/baritone/utils/WaterPassage.java", "src/main/java/baritone/utils/AutoFood.java", "src/main/java/baritone/utils/AutoFoodCommand.java"])
     source_files.update(["src/main/java/baritone/utils/GradualLook.java", "src/main/java/baritone/utils/GradualLookCommand.java"])
     source_archive = destination.parent / "baritone-1.20.0-compat.9-source.zip"
     with zipfile.ZipFile(source_archive, "w") as archive:
@@ -207,7 +210,7 @@ PY
         with zipfile.ZipFile(artifact) as archive:
             assert archive.testzip() is None
     print("Minecraft constructor: exactly one matching Component.getString call")
-    print("JAR verified: only twelve original classes and two metadata files changed; nineteen new classes; bundled libraries unchanged")
+    print("JAR verified: only twelve original classes and two metadata files changed; twenty-one new classes; bundled libraries unchanged")
     print(f"Output: {destination}\nSHA-256: {checksum}")
     print(f"Test pack: {test_pack}\nComplete source: {source_archive}")
 

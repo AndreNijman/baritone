@@ -6,7 +6,9 @@ import baritone.api.IBaritone;
 import baritone.api.Settings;
 import baritone.api.event.events.TickEvent;
 import baritone.api.event.listener.AbstractGameEventListener;
+import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.goals.GoalBlock;
+import baritone.api.pathing.goals.GoalComposite;
 import baritone.api.pathing.goals.GoalGetToBlock;
 import baritone.api.pathing.goals.GoalRunAway;
 import baritone.api.process.*;
@@ -33,6 +35,9 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
     private int digNeed, digFailures, digLast, digProgressTick, clock, deadTicks, aliveTicks;
     private String digName;
     private final ArrayDeque<Integer> deaths=new ArrayDeque<>();
+    private static volatile boolean running;
+    /** Whether the task is running; food gathering only hunts then. */
+    public static boolean running() { return running; }
     private String stage="Not started";
     private int tick, lastClick, progressTick, lastCount, retries, pendingSlot=-1;
     private Predicate<ItemStack> gathering;
@@ -40,7 +45,9 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
     private Block[] gatheringBlocks;
     private DiamondPickaxeRecipes.Recipe recipe;
     private int craftedBefore, recipeTick, placingSince;
-    private final Set<BlockPos> rejectedPlacements=new HashSet<>();
+    private final Set<BlockPos> rejectedPlacements=new HashSet<>(), shelterSkipped=new HashSet<>(), ownTables=new HashSet<>();
+    private BlockPos shelterTarget;
+    private int shelterSince, shelterApproach;
     private AbstractContainerMenu ownedMenu;
     private BlockPos table, furnace, placing, pickup, relocateFrom;
     private int pickupTick, tablesBefore, tablePlacedTick, furnacePlacedTick, resyncUntil, rejections, relocations, relocateTick, tablesCrafted;
@@ -53,7 +60,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         if (ctx.player()==null || ctx.world()==null) { log("Join a world first");return; }
         if (ctx.player().containerMenu!=ctx.player().inventoryMenu || !ctx.player().inventoryMenu.getCarried().isEmpty()) { log("Close the current container and clear the cursor first");return; }
         baritone.getPathingBehavior().cancelEverything();
-        world=ctx.world();tick=lastClick=progressTick=0;retries=0;table=furnace=placing=pickup=relocateFrom=null;digging=false;recipe=null;ownedMenu=null;rejectedPlacements.clear();resyncUntil=rejections=relocations=tablesCrafted=0;
+        world=ctx.world();tick=lastClick=progressTick=0;retries=0;table=furnace=placing=pickup=relocateFrom=shelterTarget=null;digging=false;shelterSkipped.clear();shelterApproach=0;recipe=null;ownedMenu=null;rejectedPlacements.clear();ownTables.clear();resyncUntil=rejections=relocations=tablesCrafted=0;
         var s=BaritoneAPI.getSettings();
         override(s.allowBreak,true);override(s.allowPlace,true);override(s.allowInventory,false);
         // Recipe ingredients must never be used as path scaffolding.
@@ -63,7 +70,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         s.blocksToAvoidBreaking.value.add(Blocks.CRAFTING_TABLE);s.blocksToAvoidBreaking.value.add(Blocks.FURNACE);
         // Snapped (non-realistic) aim gets block placements undone by the server; ease it for this task only.
         if(!GradualLook.enabled()) { forcedRealistic=true;GradualLook.enable(true);log("Realistic aiming is on for this task; your setting returns when it ends"); }
-        active=true;setStage("Starting from current inventory");
+        active=true;running=true;setStage("Starting from current inventory");
     }
     private <T> void override(Settings.Setting<T> setting,T value) { saved.put(setting,setting.value);setting.value=value;applied.put(setting,value); }
     @SuppressWarnings({"rawtypes","unchecked"}) private void restore() {
@@ -72,7 +79,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
     }
     public void stop(String reason) {
         if (!active) return;
-        active=false;mining=smelting=digging=false;recipe=null;placing=null;pendingSlot=-1;
+        active=false;running=false;mining=smelting=digging=false;recipe=null;placing=null;pendingSlot=-1;
         baritone.getMineProcess().cancel();baritone.getInputOverrideHandler().clearAllKeys();
         closeMenu();restore();stage=reason;log(reason);
         if(forcedRealistic) { forcedRealistic=false;GradualLook.enable(false); }
@@ -194,15 +201,16 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
                 var r=DiamondPickaxeRecipes.planks(stack.getItem());if(r!=null)return beginCraft(r);
             }
         }
-        int logs=Math.max(1,(needed-planks()+3)/4);
+        // Gather extra so planks used as smelting fuel never run short.
+        int logs=Math.max(4,(needed-planks()+3)/4);
         // Reserve the complete early recipe/fuel budget before leaving the first tree.
-        if(!tool(Items.WOODEN_PICKAXE) && !tool(Items.STONE_PICKAXE) && !tool(Items.IRON_PICKAXE) && !tool(Items.NETHERITE_PICKAXE))logs=Math.max(logs,4);
+        if(!tool(Items.WOODEN_PICKAXE) && !tool(Items.STONE_PICKAXE) && !tool(Items.IRON_PICKAXE) && !tool(Items.NETHERITE_PICKAXE))logs=Math.max(logs,8);
         return gather("wood",s->s.is(ItemTags.LOGS_THAT_BURN),logs,Blocks.OAK_LOG,Blocks.SPRUCE_LOG,Blocks.BIRCH_LOG,Blocks.JUNGLE_LOG,Blocks.ACACIA_LOG,Blocks.DARK_OAK_LOG,Blocks.MANGROVE_LOG,Blocks.CHERRY_LOG,Blocks.PALE_OAK_LOG);
     }
     private PathingCommand plan() {
         // Collect separate scaffolding before entering mines, then replenish between phases.
-        if(count(DiamondPickaxeProcess::buildingBlock)<4)
-            return gather("disposable building blocks",s->s.is(Items.DIRT),8,Blocks.DIRT,Blocks.GRASS_BLOCK);
+        if(count(DiamondPickaxeProcess::buildingBlock)<8)
+            return gather("disposable building blocks",s->s.is(Items.DIRT),16,Blocks.DIRT,Blocks.GRASS_BLOCK);
         if(!tool(Items.IRON_PICKAXE) && !tool(Items.DIAMOND_PICKAXE) && !tool(Items.NETHERITE_PICKAXE)) {
             if(!tool(Items.STONE_PICKAXE)) {
                 if(!tool(Items.WOODEN_PICKAXE)) {
@@ -231,6 +239,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         return beginCraft(DiamondPickaxeRecipes.pickaxe(Items.DIAMOND_PICKAXE,Items.DIAMOND));
     }
     private PathingCommand beginCraft(DiamondPickaxeRecipes.Recipe value) {
+        if(value.width()>2 && table==null && count(Items.CRAFTING_TABLE)==0) table=nearbyTable();
         if(value.width()>2 && table==null && count(Items.CRAFTING_TABLE)==0) {
             if(planks()<4)return wood(4);
             if(++tablesCrafted>3) { stop("Crafted three crafting tables this run but they keep disappearing; the server may be undoing placements. Rejoin to resync, then restart");return null; }
@@ -268,7 +277,8 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
             boolean usedTable=recipe.width()>2;
             recipe=null;pendingSlot=-1;closeMenu();progressTick=tick;
             // Carry the table to the next work site rather than crafting another one there.
-            if(usedTable && table!=null) { pickup=table;pickupTick=tick;tablesBefore=count(Items.CRAFTING_TABLE); }
+            // Never take a table someone else placed.
+            if(usedTable && table!=null && ownTables.contains(table)) { pickup=table;pickupTick=tick;tablesBefore=count(Items.CRAFTING_TABLE); }
             return pause();
         }
         if(tick-recipeTick>1800) { stop("Crafting timed out; server may reject the recipe or inventory actions");return null; }
@@ -334,9 +344,10 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         }
         if(pos==null && placing!=null && ctx.world().getBlockState(placing).is(block)) {
             pos=placing;
-            if(block==Blocks.CRAFTING_TABLE) { table=pos;tablePlacedTick=tick; } else { furnace=pos;furnacePlacedTick=tick; }
+            if(block==Blocks.CRAFTING_TABLE) { table=pos;tablePlacedTick=tick;ownTables.add(pos); } else { furnace=pos;furnacePlacedTick=tick; }
             placing=null;relocations=0;
         }
+        if(pos==null && block==Blocks.CRAFTING_TABLE && placing==null) { pos=table=nearbyTable(); }
         if(pos==null) {
             if(count(item)==0) { recipe=null;smelting=false;return pause(); }
             if(relocateFrom!=null) {
@@ -351,7 +362,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
                 return pause();
             }
             pos=placing;
-            if(ctx.world().getBlockState(pos).is(block)) { if(block==Blocks.CRAFTING_TABLE) { table=pos;tablePlacedTick=tick; } else { furnace=pos;furnacePlacedTick=tick; } placing=null;return pause(); }
+            if(ctx.world().getBlockState(pos).is(block)) { if(block==Blocks.CRAFTING_TABLE) { table=pos;tablePlacedTick=tick;ownTables.add(pos); } else { furnace=pos;furnacePlacedTick=tick; } placing=null;return pause(); }
             // Something (a block or entity) kept the click from landing: choose another spot.
             if(tick-placingSince>100) { rejectedPlacements.add(pos);placing=null;return pause(); }
             if(!equip(item))return pause();
@@ -363,6 +374,8 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
             }
             return pause();
         }
+        // Box in beside the furnace (or a table when hostiles are near) before standing still to use it.
+        if(block==Blocks.FURNACE || hostileNearby()) { PathingCommand shelter=shelter(pos);if(shelter!=null)return shelter; }
         Optional<Rotation> reachable=RotationUtils.reachable(ctx,pos,ctx.playerController().getBlockReachDistance());
         if(reachable.isEmpty() && !prepareBuildingBlocks())return pause();
         if(reachable.isEmpty())return new PathingCommand(new GoalGetToBlock(pos),PathingCommandType.REVALIDATE_GOAL_AND_PATH);
@@ -391,6 +404,76 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         BlockPos drop=ctx.entitiesStream().filter(e->e instanceof net.minecraft.world.entity.item.ItemEntity item && item.getItem().is(Items.CRAFTING_TABLE) && e.distanceToSqr(Vec3.atCenterOf(pickup))<36)
                 .findFirst().map(net.minecraft.world.entity.Entity::blockPosition).orElse(pickup);
         return new PathingCommand(new GoalBlock(drop),PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+    }
+    /** Closest crafting table within sixteen blocks (any owner; tables hold no items). */
+    private BlockPos nearbyTable() {
+        BlockPos feet=ctx.playerFeet(),best=null;
+        double bestDistance=Double.MAX_VALUE;
+        for(int dx=-16;dx<=16;dx++)for(int dz=-16;dz<=16;dz++)for(int dy=-6;dy<=6;dy++) {
+            BlockPos p=feet.offset(dx,dy,dz);
+            if(!ctx.world().getBlockState(p).is(Blocks.CRAFTING_TABLE) || rejectedPlacements.contains(p))continue;
+            double distance=p.distSqr(feet);
+            if(distance<bestDistance) { bestDistance=distance;best=p; }
+        }
+        return best;
+    }
+    private boolean hostileNearby() {
+        var player=ctx.player();
+        return ctx.entitiesStream().anyMatch(e->MobSafety.dangerous(e,player) && e.distanceTo(player)<16);
+    }
+    private boolean open(BlockPos p) {
+        var state=ctx.world().getBlockState(p);
+        return (state.isAir() || state.canBeReplaced()) && state.getFluidState().isEmpty();
+    }
+    private boolean solid(BlockPos p) { return !ctx.world().getBlockState(p).getCollisionShape(ctx.world(),p).isEmpty(); }
+    /**
+     * Stand next to the station and fill the open spaces around feet and head with dirt, the station forming one wall.
+     * A roof is added only when something at roof height can hold it; from inside a box on open ground there is none.
+     * Returns null once enclosed, or when the shelter is impossible here.
+     */
+    private PathingCommand shelter(BlockPos station) {
+        BlockPos feet=ctx.playerFeet();
+        boolean beside=false;
+        for(Direction d:Direction.Plane.HORIZONTAL) if(feet.relative(d).equals(station) || feet.relative(d).above().equals(station))beside=true;
+        if(!beside) {
+            if(++shelterApproach>200)return null;
+            List<Goal> spots=new ArrayList<>();
+            for(Direction d:Direction.Plane.HORIZONTAL) { BlockPos s=station.relative(d);if(open(s) && open(s.above()) && solid(s.below()))spots.add(new GoalBlock(s)); }
+            if(spots.isEmpty())return null;
+            return new PathingCommand(new GoalComposite(spots.toArray(Goal[]::new)),PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+        }
+        List<BlockPos> fill=new ArrayList<>();
+        for(int dy=0;dy<=1;dy++)for(Direction d:Direction.Plane.HORIZONTAL) { BlockPos w=feet.relative(d).above(dy);if(!w.equals(station) && open(w))fill.add(w); }
+        BlockPos roof=feet.above(2);
+        if(open(roof)) { boolean held=solid(roof.above());for(Direction d:Direction.Plane.HORIZONTAL)held|=solid(roof.relative(d));if(held)fill.add(roof); }
+        fill.removeAll(shelterSkipped);
+        if(fill.isEmpty())return null;
+        if(count(DiamondPickaxeProcess::buildingBlock)==0)return null;
+        BlockPos target=fill.get(0);
+        if(!target.equals(shelterTarget)) { shelterTarget=target;shelterSince=tick; }
+        if(tick-shelterSince>100) { shelterSkipped.add(target);return pause(); }
+        // Hold a building block.
+        var items=ctx.player().getInventory().getNonEquipmentItems();
+        int slot=-1;
+        for(int i=0;i<9;i++)if(buildingBlock(items.get(i))) { slot=i;break; }
+        if(slot<0) { prepareBuildingBlocks();return pause(); }
+        if(ctx.player().getInventory().getSelectedSlot()!=slot) { ctx.player().getInventory().setSelectedSlot(slot);ctx.playerController().syncHeldItem();return pause(); }
+        // Place against a visible face of a solid neighbour (floor first).
+        for(Direction d:new Direction[]{Direction.DOWN,Direction.NORTH,Direction.SOUTH,Direction.EAST,Direction.WEST,Direction.UP}) {
+            BlockPos against=target.relative(d);
+            if(against.equals(feet) || against.equals(feet.above()) || !solid(against))continue;
+            Vec3 point=Vec3.atCenterOf(target).add(d.getStepX()*0.5,d.getStepY()*0.5,d.getStepZ()*0.5);
+            Rotation aim=RotationUtils.calcRotationFromVec3d(ctx.playerHead(),point,ctx.playerRotations());
+            if(!(RayTraceUtils.rayTraceTowards(ctx.player(),aim,ctx.playerController().getBlockReachDistance()) instanceof BlockHitResult ray)
+                    || !ray.getBlockPos().equals(against) || ray.getDirection()!=d.getOpposite())continue;
+            setStage("Boxing in by the station");
+            baritone.getLookBehavior().updateTarget(aim,true);
+            if(settled(aim) && ctx.objectMouseOver() instanceof BlockHitResult hit && hit.getType()==HitResult.Type.BLOCK && hit.getBlockPos().equals(against)
+                    && hit.getDirection()==d.getOpposite() && tick-lastClick>=6) { useBlock(hit);lastClick=tick; }
+            return pause();
+        }
+        shelterSkipped.add(target);
+        return pause();
     }
     /** Click only once the eased aim has come to rest on the target, not while sweeping across it. */
     private boolean settled(Rotation target) {
