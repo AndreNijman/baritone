@@ -79,7 +79,7 @@ public class Avoidance {
                     .filter(entity -> !(entity instanceof Enderman) || ((Enderman) entity).isCreepy())
                     .forEach(entity -> res.add(new Avoidance(entity.blockPosition(), mobCoeff, MobSafety.avoidRadius(entity, Baritone.settings().mobAvoidanceRadius.value))));
         }
-        MobSafety.augment(res, ctx, Avoidance.class);
+        MobSafety.augment(res, Avoidance.class);
         return res;
     }
 

@@ -94,5 +94,18 @@ public final class ActualRuntimeTest {
                 throw new AssertionError("Movement mask " + mask + ": vanilla="+expected.x+","+expected.y+" candidate="+actual.x+","+actual.y);
         }
         System.out.println("Real candidate movement class: all 128 input combinations match real KeyboardInput/Vec2/Input");
+        // Bytecode patches are only verified when a class first loads; force every patched and added class now so a
+        // stack-map mistake fails here instead of in game (initialisers may still need the running game).
+        String[] patched = {"baritone.fp", "baritone.fj", "baritone.a", "baritone.f", "baritone.f$a", "baritone.f$b", "baritone.fz", "baritone.cc", "baritone.cb", "baritone.dt",
+                "baritone.api.utils.RotationUtils", "baritone.api.behavior.look.IAimProcessor", "baritone.utils.GradualLook", "baritone.utils.MobSafety", "baritone.utils.MobSafetyProcess",
+                "baritone.utils.AutoFood", "baritone.utils.DiamondPickaxeProcess", "baritone.utils.WaterPassage", "baritone.utils.StopHotkey"};
+        int verified = 0;
+        for (String name : patched) {
+            try { Class.forName(name, true, ActualRuntimeTest.class.getClassLoader()); }
+            catch (VerifyError | ClassFormatError error) { throw new AssertionError("Bytecode verification failed for " + name, error); }
+            catch (LinkageError | RuntimeException error) { /* verified; initialisation needs the game */ }
+            verified++;
+        }
+        System.out.println("Patched and added classes: " + verified + " load and pass bytecode verification");
     }
 }

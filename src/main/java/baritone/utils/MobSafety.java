@@ -129,7 +129,7 @@ public final class MobSafety {
      * longer in view, so paths and goals near them become a last resort. {@code type} is the (obfuscated) Avoidance class.
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    public static void augment(java.util.List list, IPlayerContext ctx, Class<?> type) {
+    public static void augment(java.util.List list, Class<?> type) {
         if (!enabled || hunters.isEmpty() || !BaritoneAPI.getSettings().avoidance.value) return;
         try {
             if (avoidance == null || avoidance.getDeclaringClass() != type) {

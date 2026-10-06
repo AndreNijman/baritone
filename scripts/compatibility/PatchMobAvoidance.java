@@ -18,8 +18,9 @@ public final class PatchMobAvoidance implements Opcodes {
                         @Override public void visitInsn(int opcode) {
                             if (opcode==ARETURN) {
                                 changes[2]++;
-                                super.visitInsn(DUP);super.visitVarInsn(ALOAD,0);super.visitLdcInsn(Type.getObjectType(OWNER));
-                                super.visitMethodInsn(INVOKESTATIC,"baritone/utils/MobSafety","augment","(Ljava/util/List;Lbaritone/api/utils/IPlayerContext;Ljava/lang/Class;)V",false);
+                                // Only the returned list is used: the stack map already drops the context local here.
+                                super.visitInsn(DUP);super.visitLdcInsn(Type.getObjectType(OWNER));
+                                super.visitMethodInsn(INVOKESTATIC,"baritone/utils/MobSafety","augment","(Ljava/util/List;Ljava/lang/Class;)V",false);
                             }
                             super.visitInsn(opcode);
                         }
