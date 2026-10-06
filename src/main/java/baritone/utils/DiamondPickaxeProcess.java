@@ -48,6 +48,8 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         world=ctx.world();tick=lastClick=progressTick=0;retries=0;table=furnace=placing=null;recipe=null;ownedMenu=null;
         var s=BaritoneAPI.getSettings();
         override(s.allowBreak,true);override(s.allowPlace,true);override(s.allowInventory,false);
+        // Recipe ingredients must never be used as path scaffolding.
+        override(s.acceptableThrowawayItems,new ArrayList<>(List.of(Items.DIRT,Items.NETHERRACK)));
         override(s.mineScanDroppedItems,true);override(s.exploreForBlocks,true);
         override(s.blocksToAvoidBreaking,new ArrayList<>(s.blocksToAvoidBreaking.value));
         s.blocksToAvoidBreaking.value.add(Blocks.CRAFTING_TABLE);s.blocksToAvoidBreaking.value.add(Blocks.FURNACE);
@@ -86,6 +88,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         if (count(Items.DIAMOND_PICKAXE)>0) { stop("Complete — diamond pickaxe is in your inventory");return null; }
         try {
             if (mining) {
+                if(safe && !prepareBuildingBlocks())return pause();
                 int n=count(gathering);
                 if (n>=gatheringCount) {
                     mining=false;baritone.getMineProcess().cancel();progressTick=tick;
@@ -110,7 +113,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
     }
     private PathingCommand gather(String name,Predicate<ItemStack> filter,int quantity,Block... blocks) {
         if(ctx.player().getInventory().getNonEquipmentItems().stream().noneMatch(ItemStack::isEmpty)) { stop("Inventory is full; free space and restart");return null; }
-        closeMenu();if(!equipBestPick())return pause();
+        closeMenu();if(!equipBestPick() || !prepareBuildingBlocks())return pause();
         mining=true;gathering=filter;gatheringCount=quantity;gatheringBlocks=blocks;lastCount=count(filter);retries=0;
         setStage("Gathering "+name+" ("+lastCount+"/"+quantity+")");
         baritone.getMineProcess().mine(blocks);
@@ -128,6 +131,9 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         return gather("wood",s->s.is(ItemTags.LOGS_THAT_BURN),logs,Blocks.OAK_LOG,Blocks.SPRUCE_LOG,Blocks.BIRCH_LOG,Blocks.JUNGLE_LOG,Blocks.ACACIA_LOG,Blocks.DARK_OAK_LOG,Blocks.MANGROVE_LOG,Blocks.CHERRY_LOG,Blocks.PALE_OAK_LOG);
     }
     private PathingCommand plan() {
+        // Collect separate scaffolding before entering mines, then replenish between phases.
+        if(count(DiamondPickaxeProcess::buildingBlock)<4)
+            return gather("disposable building blocks",s->s.is(Items.DIRT),8,Blocks.DIRT,Blocks.GRASS_BLOCK);
         if(!tool(Items.IRON_PICKAXE) && !tool(Items.DIAMOND_PICKAXE) && !tool(Items.NETHERITE_PICKAXE)) {
             if(!tool(Items.STONE_PICKAXE)) {
                 if(!tool(Items.WOODEN_PICKAXE)) {
@@ -260,6 +266,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
             return pause();
         }
         Optional<Rotation> reachable=RotationUtils.reachable(ctx,pos,ctx.playerController().getBlockReachDistance());
+        if(reachable.isEmpty() && !prepareBuildingBlocks())return pause();
         if(reachable.isEmpty())return new PathingCommand(new GoalGetToBlock(pos),PathingCommandType.REVALIDATE_GOAL_AND_PATH);
         baritone.getLookBehavior().updateTarget(reachable.get(),true);
         if(ctx.objectMouseOver() instanceof BlockHitResult hit && hit.getType()==HitResult.Type.BLOCK && hit.getBlockPos().equals(pos) && tick-lastClick>=10) {
@@ -280,6 +287,16 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
             if(ctx.world().getBlockState(p).isAir() && ctx.world().getFluidState(p).isEmpty() && ctx.world().getBlockState(p.below()).isSolidRender() && Vec3.atCenterOf(p.below()).distanceToSqr(ctx.playerHead())<16)return p;
         }
         return null;
+    }
+    private static boolean buildingBlock(ItemStack stack) { return stack.is(Items.DIRT) || stack.is(Items.NETHERRACK); }
+    private boolean prepareBuildingBlocks() {
+        var items=ctx.player().getInventory().getNonEquipmentItems();
+        for(int i=0;i<9;i++)if(buildingBlock(items.get(i)))return true;
+        for(int i=9;i<items.size();i++)if(buildingBlock(items.get(i))) {
+            if(readyToClick())click(ctx.player().inventoryMenu,i,8,ContainerInput.SWAP);
+            return false;
+        }
+        return true; // Initial collection can start without scaffolding.
     }
     private boolean equip(Item item) {
         var inventory=ctx.player().getInventory();

@@ -105,7 +105,7 @@ Path('/scratch/game/config/fabric_loader_dependencies.json').write_text(json.dum
 PY
 fi
 "$PATCH_JDK/bin/javac" -J-Xmx256m --release 25 -cp "$PATCH_CP:$PATCH_FABRIC_CP" -d /scratch/launcher /source/scripts/compatibility/KnotSmokeTest.java
-"$PATCH_JDK/bin/javac" -J-Xmx256m --release 25 -cp "$PATCH_CP:$PATCH_FABRIC_CP" -d /scratch/source-check /source/src/launch/java/baritone/launch/mixins/MixinSignEditScreen.java
+"$PATCH_JDK/bin/javac" -J-Xmx256m --release 25 -cp "$PATCH_CP:$PATCH_FABRIC_CP" -d /scratch/source-check /source/src/launch/java/baritone/launch/mixins/MixinSignEditScreen.java /source/src/launch/java/baritone/launch/mixins/MixinKeyboardHandler.java
 "$PATCH_JDK/bin/javac" -J-Xmx256m --release 25 -cp "$PATCH_CP" -d /scratch/game-tests /source/scripts/compatibility/SignRoundTripTest.java
 "$PATCH_JDK/bin/java" -Djava.io.tmpdir=/scratch/tmp -Djdk.net.hosts.file=/scratch/etc/hosts -Dmixin.debug.export=true -Dmixin.debug.export.decompile=false -Djava.awt.headless=true --sun-misc-unsafe-memory-access=allow -Xmx512m -XX:ActiveProcessorCount=2 -XX:CompressedClassSpaceSize=128m -XX:ReservedCodeCacheSize=128m \
  -cp "/scratch/launcher:$PATCH_CP:$PATCH_FABRIC_CP" KnotSmokeTest

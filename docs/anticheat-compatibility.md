@@ -521,3 +521,49 @@ remain byte-identical (SHA-256
 Compat.6, settings and a verified manifest are backed up outside mods at
 .codex-backups/diamond-compat.7/. Restart the profile, use realistic status and
 diamondpickaxe in a world with reachable resources.
+
+## Keypad stop and reserved crafting materials — 2026-10-06 (compat.8)
+
+Numpad 9 executes the primary Baritone's ordinary stop command from the actual
+Minecraft 26.3 KeyboardHandler, before screen handling. It works in crafting
+screens with either Num Lock state. Top-row 9 retains its ordinary behavior;
+repeat/release events do not invoke stop. The binding is active only in a world.
+
+The diamond-pickaxe coordinator temporarily restricts path throwaway items to
+dirt and netherrack. It collects eight dirt when fewer than four disposable
+building blocks remain and makes safe building blocks available in the hotbar,
+including supplies stored in the main inventory. Recipe ingredients are retained
+for crafting. The original throwaway list restores on completion/cancellation
+unless deliberately changed during the task. Existing movement/sprint/parkour
+behavior is preserved.
+
+The bounded offline rendered hole fixture reproduces the reported defect with
+compat.7: once holding three cobblestone and a wooden pick, the bot is teleported
+into a two-block pit with bedrock sides. It spends one cobblestone to climb out,
+stalls with only two in the stone-pick recipe, and times out. Compat.8 places zero
+cobblestone, uses dirt, completes all eight recipe types and three iron smelts,
+and holds a server-confirmed diamond pickaxe. Both completion and keypad stop
+restore task settings and clear client/server cursors normally.
+
+The actual KeyboardHandler trial verifies a visible crafting screen, top-row 9
+is unaffected, keypad stop, repeat/release behavior, Num Lock and cancellation of
+a new ordinary goal. The first test assertion checked the cursor before the
+normal container-close acknowledgement; that excluded attempt is retained.
+The revised test allows 40 ticks for the exchange. Inputs remain immutable in
+all four attempts. Detailed evidence and remaining public Grim flags are in
+../andre-anticheat/reports/2026-10-06-reserve.md and its JSON.
+
+Exact compat.8 SHA-256:
+5cdb13565d9a31b6eb5eee8134bf07688859d8798bc295ae06e07ffc11d1220d.
+The offline supported-Fabric runtime suite passes 142,626 geometry assertions,
+123 real components, all 128 keyboard combinations, both mixin source checks,
+and 100 patched/100 stock sign round trips. The overlay adds twelve classes,
+changes eight original classes and two metadata entries, and preserves bundled
+libraries. No full Gradle build or private-server test is claimed.
+
+Installed compat.8 into the closed Modrinth Fabric 26.3 profile after checking
+this exact hash and one standalone Baritone JAR. The settings remain byte-identical
+(SHA-256 3930b507c6e966a2eaaa71b393403072a330d870a9d0604de9f2c40e03907a34).
+The previous compat.7 JAR, settings and manifest are backed up outside mods at
+.codex-backups/reserve-compat.8/. Launch the profile to load the new stop binding
+and protected recipe materials.

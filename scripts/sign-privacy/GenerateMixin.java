@@ -23,6 +23,7 @@ public final class GenerateMixin implements Opcodes {
     public static void main(String[] args) throws Exception {
         int[] matches = {0};
         try (ZipFile jar = new ZipFile(args[0])) {
+            requireMethod(jar,"net/minecraft/client/KeyboardHandler","keyPress","(JILnet/minecraft/client/input/KeyEvent;)V");
             String component = "net/minecraft/network/chat/Component";
             String translation = "net/minecraft/network/chat/contents/TranslatableContents";
             requireMethod(jar, component, "getContents", "()Lnet/minecraft/network/chat/ComponentContents;");
@@ -77,5 +78,26 @@ public final class GenerateMixin implements Opcodes {
         redirect.visitInsn(ARETURN); redirect.visitMaxs(1, 2); redirect.visitEnd(); writer.visitEnd();
         Path output = Path.of(args[1], name + ".class");
         Files.createDirectories(output.getParent()); Files.write(output, writer.toByteArray());
+        keyboardMixin(Path.of(args[1]));
+    }
+    private static void keyboardMixin(Path root) throws Exception {
+        ClassWriter writer=new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
+        String name="baritone/launch/mixins/MixinKeyboardHandler";
+        writer.visit(V25,ACC_PUBLIC | ACC_ABSTRACT | ACC_SUPER,name,null,"java/lang/Object",null);
+        writer.visitSource("MixinKeyboardHandler.java",null);
+        AnnotationVisitor mixin=writer.visitAnnotation("Lorg/spongepowered/asm/mixin/Mixin;",false);
+        AnnotationVisitor value=mixin.visitArray("value");value.visit(null,Type.getObjectType("net/minecraft/client/KeyboardHandler"));value.visitEnd();mixin.visitEnd();
+        MethodVisitor ctor=writer.visitMethod(ACC_PUBLIC,"<init>","()V",null,null);
+        ctor.visitCode();ctor.visitVarInsn(ALOAD,0);ctor.visitMethodInsn(INVOKESPECIAL,"java/lang/Object","<init>","()V",false);ctor.visitInsn(RETURN);ctor.visitMaxs(0,0);ctor.visitEnd();
+        MethodVisitor method=writer.visitMethod(ACC_PRIVATE,"baritone$stopHotkey","(JILnet/minecraft/client/input/KeyEvent;Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V",null,null);
+        AnnotationVisitor inject=method.visitAnnotation("Lorg/spongepowered/asm/mixin/injection/Inject;",true);
+        AnnotationVisitor methods=inject.visitArray("method");methods.visit(null,"keyPress(JILnet/minecraft/client/input/KeyEvent;)V");methods.visitEnd();
+        AnnotationVisitor at=inject.visitAnnotation("at","Lorg/spongepowered/asm/mixin/injection/At;");at.visit("value","HEAD");at.visitEnd();inject.visit("cancellable",true);inject.visit("require",1);inject.visitEnd();
+        method.visitCode();method.visitVarInsn(LLOAD,1);method.visitVarInsn(ILOAD,3);method.visitVarInsn(ALOAD,4);
+        method.visitMethodInsn(INVOKESTATIC,"baritone/utils/StopHotkey","handle","(JILnet/minecraft/client/input/KeyEvent;)Z",false);
+        Label done=new Label();method.visitJumpInsn(IFEQ,done);method.visitVarInsn(ALOAD,5);
+        method.visitMethodInsn(INVOKEVIRTUAL,"org/spongepowered/asm/mixin/injection/callback/CallbackInfo","cancel","()V",false);
+        method.visitLabel(done);method.visitInsn(RETURN);method.visitMaxs(0,0);method.visitEnd();writer.visitEnd();
+        Path output=root.resolve(name+".class");Files.createDirectories(output.getParent());Files.write(output,writer.toByteArray());
     }
 }

@@ -5,12 +5,12 @@ Target: **Minecraft 26.3, Fabric Loader 0.19.5 or later, Java 25 or later**.
 The candidate includes the sign privacy patch and the Minecraft 26.3 keyboard
 input and mining corrections described in `docs/anticheat-compatibility.md`.
 
-The installable JAR is `dist/baritone-api-fabric-1.20.0-compat.7.jar`.
+The installable JAR is `dist/baritone-api-fabric-1.20.0-compat.8.jar`.
 Replace the existing Baritone JAR in the instance's `mods` directory with this file.
 Restart Minecraft, and run `#help` to confirm Baritone loads. Only one Baritone JAR
 should be installed. This is the API release with its normal commands and bundled
 nether pathfinder. Eight original classes are changed: input, mining, core initialization, look behavior,
-both aim processors, geometric reachability and its API. Ten classes are added.
+both aim processors, geometric reachability and its API. Twelve classes are added.
 Every other original class and nested JAR is preserved byte for byte.
 
 ## What the patch does
@@ -75,7 +75,7 @@ resource, which alone is not proof that the corresponding mod is installed.
   help/goto/stop/mine/build/follow command registrations in the headless runtime.
 - Compiled the included mixin source against the real game and Mixin API.
 - Checked archive integrity: eight original classes and two metadata files change.
-  Ten classes are added; bundled libraries are unchanged.
+  Twelve classes are added; bundled libraries are unchanged.
 - Passed 142,626 geometry and steering assertions covering wraparound, angle caps, pitch limits,
   mouse-sensitivity increments, convergence and disabling the controller.
 - Compiled the changed reachability API independently of the new main implementation.
@@ -168,6 +168,14 @@ It records received rotation measurements, water crossings, dry-land regressions
 unsuccessful controls, the submerged planning limitation and remaining flags. There is no human-observer study and no
 proof against the undisclosed private stack.
 
+## Numpad 9 stop (compat.8)
+
+Press **Numpad 9** to execute the normal `#stop` command. It cancels mining,
+pathing and the diamond-pickaxe task, including while its crafting screen is open.
+The top-row 9 is unaffected. Num Lock does not change the binding; holding the
+key does not repeatedly invoke stop. The binding is active only in a world and
+consumes that keypad key before ordinary screen handling.
+
 ## Autonomous diamond pickaxe
 
 Run `#diamondpickaxe` in a normal survival world. It reuses supplies you already
@@ -177,6 +185,14 @@ crafts wooden and stone pickaxes, mines raw iron and furnace cobblestone, places
 a furnace, smelts iron using available coal/charcoal or gathered planks, crafts an
 iron pickaxe, mines three diamonds and crafts a diamond pickaxe. It uses normal
 survival interactions and inventory clicks; no recipe-book unlock is needed.
+
+The task collects eight dirt blocks for scaffolding and replenishes between stages
+when fewer than four disposable blocks remain. It keeps dirt or netherrack in the
+hotbar for bridging and climbing. During this task, only those two items are
+acceptable pathing throwaways, so cobblestone, stone and other crafting ingredients
+are retained for recipes. Your original throwaway list is restored on completion
+or cancellation unless you deliberately changed it during the task. A route still
+requires accessible resources and an escape that Baritone can plan.
 
 Use `#diamondpickaxe status` to inspect the current stage, and
 `#diamondpickaxe stop` or `#stop` to cancel. Start with a clear crafting cursor
@@ -253,7 +269,7 @@ Run the real-runtime tests with already cached Linux launcher libraries:
 python3 scripts/compatibility/test_runtime.py \
   --minecraft /path/to/minecraft-26.3.jar \
   --metadata /path/to/26.3.json \
-  --candidate dist/baritone-api-fabric-1.20.0-compat.7.jar \
+  --candidate dist/baritone-api-fabric-1.20.0-compat.8.jar \
   --libraries /path/to/launcher/meta/libraries \
   --fabric-runtime \
   --upstream-control /path/to/baritone-api-fabric-1.20.0.jar

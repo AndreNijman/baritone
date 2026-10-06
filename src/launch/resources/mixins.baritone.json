@@ -29,6 +29,7 @@
     "MixinRenderType",
     "MixinScreen",
     "MixinSignEditScreen",
+    "MixinKeyboardHandler",
     "MixinWorldRenderer"
   ],
   "mixins": [
