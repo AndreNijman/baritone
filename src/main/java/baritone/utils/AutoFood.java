@@ -45,7 +45,8 @@ public final class AutoFood implements IBaritoneProcess, AbstractGameEventListen
     private final IBaritone baritone;
     private final IPlayerContext ctx;
     private int mode, ticks, lastSwap, huntCooldown, clock;
-    private boolean automation, holdingUse;
+    private boolean automation, holdingUse, manual, huntFailed;
+    private int target;
     private Entity prey;
     private BlockPos preyGoal;
     private String state = "idle";
@@ -53,6 +54,13 @@ public final class AutoFood implements IBaritoneProcess, AbstractGameEventListen
     public AutoFood(IBaritone baritone) { this.baritone = baritone; ctx = baritone.getPlayerContext(); }
 
     public static boolean enabled() { return enabled; }
+    /** #getfood: hunt until holding {@code count} food items, eat if hungry, then stop. Works without another task. */
+    public void request(int count) {
+        if (ctx.player() == null) { Helper.HELPER.logDirect("Food: join a world first"); return; }
+        manual = true; target = count; huntFailed = false; mode = IDLE; huntCooldown = 0;
+        setState("getting " + count + " food (" + foodItems() + " now)");
+    }
+    public void cancel() { if (manual || mode != IDLE) { release(); manual = false; mode = IDLE; setState("stopped"); } }
     public static void enable(boolean value) { enabled = value; }
     public String state() { return state; }
     private void setState(String value) { if (!state.equals(value)) { state = value; Helper.HELPER.logDirect("Food: " + value); } }
@@ -92,7 +100,9 @@ public final class AutoFood implements IBaritoneProcess, AbstractGameEventListen
     private boolean idleScreen() { return ctx.player().containerMenu == ctx.player().inventoryMenu && ctx.minecraft().gui.screen() == null; }
 
     @Override public boolean isActive() {
-        if (!enabled || ctx.player() == null || ctx.world() == null || !ctx.player().isAlive()) { release(); mode = IDLE; return false; }
+        if (ctx.player() == null || ctx.world() == null || !ctx.player().isAlive()) { release(); mode = IDLE; return false; }
+        if (manual) return true;
+        if (!enabled) { release(); mode = IDLE; return false; }
         if (mode != IDLE) return true;
         if (!automation || !idleScreen() || !hungry()) return false;
         if (bestFoodSlot() >= 0) return true;
@@ -100,7 +110,18 @@ public final class AutoFood implements IBaritoneProcess, AbstractGameEventListen
     }
 
     @Override public PathingCommand onTick(boolean calcFailed, boolean isSafeToCancel) {
-        if (mode == IDLE) { mode = bestFoodSlot() >= 0 ? EATING : HUNTING; ticks = 0; prey = null; preyGoal = null; }
+        if (mode == IDLE) {
+            if (manual) {
+                if (foodItems() < target && !huntFailed) mode = HUNTING;
+                else if (hungry() && bestFoodSlot() >= 0) mode = EATING;
+                else {
+                    manual = false;
+                    setState(foodItems() >= target ? "got " + foodItems() + " food" : "found no more animals nearby (" + foodItems() + " food)");
+                    return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
+                }
+            } else mode = bestFoodSlot() >= 0 ? EATING : HUNTING;
+            ticks = 0; prey = null; preyGoal = null;
+        }
         ticks++;
         return mode == EATING ? eat() : hunt(calcFailed);
     }
@@ -134,9 +155,11 @@ public final class AutoFood implements IBaritoneProcess, AbstractGameEventListen
     }
 
     private PathingCommand hunt(boolean calcFailed) {
-        if (bestFoodSlot() >= 0 && foodItems() >= 4 || ticks > 1200 || !DiamondPickaxeProcess.running()) {
+        boolean enough = manual ? foodItems() >= target : bestFoodSlot() >= 0 && foodItems() >= 4;
+        if (enough || ticks > (manual ? 3600 : 1200) || !manual && !DiamondPickaxeProcess.running()) {
+            if (manual && !enough) huntFailed = true;
             mode = IDLE; huntCooldown = bestFoodSlot() >= 0 ? 0 : 1200; preyGoal = null;
-            setState(bestFoodSlot() >= 0 ? "collected food" : "found no food; trying again in a minute");
+            if (!manual) setState(bestFoodSlot() >= 0 ? "collected food" : "found no food; trying again in a minute");
             return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
         }
         // Collect meat dropped nearby first.
@@ -145,7 +168,7 @@ public final class AutoFood implements IBaritoneProcess, AbstractGameEventListen
                 .map(e -> (ItemEntity) e).min(Comparator.comparingDouble(e -> e.distanceTo(player))).orElse(null);
         if (drop != null && (prey == null || !prey.isAlive())) { setState("collecting food"); return new PathingCommand(new GoalBlock(drop.blockPosition()), PathingCommandType.REVALIDATE_GOAL_AND_PATH); }
         if (prey == null || !prey.isAlive() || calcFailed) prey = nearestPrey();
-        if (prey == null) { ticks = Math.max(ticks, 1100); return pause(); }
+        if (prey == null) { ticks = Math.max(ticks, manual ? 3500 : 1100); return pause(); }
         setState("hunting " + prey.getName().getString());
         double distance = player.distanceTo(prey);
         if (distance > 2.8 || !player.hasLineOfSight(prey)) {
@@ -177,7 +200,7 @@ public final class AutoFood implements IBaritoneProcess, AbstractGameEventListen
     private void release() { if (holdingUse) { ctx.minecraft().options.keyUse.setDown(false); holdingUse = false; } }
 
     @Override public void onTick(TickEvent event) {
-        if (event.getType() == TickEvent.Type.OUT) { release(); mode = IDLE; automation = false; return; }
+        if (event.getType() == TickEvent.Type.OUT) { release(); mode = IDLE; manual = false; automation = false; return; }
         clock++;
         if (huntCooldown > 0) huntCooldown--;
         var inControl = baritone.getPathingControlManager().mostRecentInControl();
@@ -185,10 +208,10 @@ public final class AutoFood implements IBaritoneProcess, AbstractGameEventListen
         // A higher-priority process (mob safety) took over without telling us: stop eating so the retreat is not slowed.
         if (holdingUse && inControl.filter(process -> process == this).isEmpty()) release();
     }
-    @Override public void onPlayerDeath() { release(); mode = IDLE; }
+    @Override public void onPlayerDeath() { release(); mode = IDLE; manual = false; }
     @Override public boolean isTemporary() { return true; }
     @Override public double priority() { return 90; }
-    @Override public void onLostControl() { release(); mode = IDLE; }
+    @Override public void onLostControl() { release(); mode = IDLE; manual = false; }
     @Override public String displayName0() { return "Food: " + state; }
 
     public static void savePreference(IPlayerContext context) {
@@ -206,6 +229,10 @@ public final class AutoFood implements IBaritoneProcess, AbstractGameEventListen
                 if (java.nio.file.Files.isRegularFile(file)) enabled = java.nio.file.Files.readString(file).contains("enabled=true");
             } catch (java.io.IOException error) { Helper.HELPER.logDirect("Could not read auto eat preference; using default."); }
         }
-        baritone.getCommandManager().getRegistry().register(new AutoFoodCommand(baritone));
+        AutoFood process = new AutoFood(baritone);
+        baritone.getPathingControlManager().registerProcess(process);
+        baritone.getGameEventHandler().registerEventListener(process);
+        baritone.getCommandManager().getRegistry().register(new AutoFoodCommand(baritone, process));
+        baritone.getCommandManager().getRegistry().register(new GetFoodCommand(baritone, process));
     }
 }

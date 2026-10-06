@@ -38,7 +38,10 @@ public final class MobSafetyProcess implements IBaritoneProcess, AbstractGameEve
     private int retreatTicks, clearTicks, cooldown, failures, goalAge, retreats, assessedTick = Integer.MIN_VALUE;
     private Threat assessed;
     private Mob current;
-    private int quietId = -1, quietUntil;
+    private int quietId = -1, quietUntil, lastLookahead, lastReplan, replanWindow;
+    private boolean replanRequested;
+    private String replanReason;
+    private final java.util.Map<Integer, Integer> replans = new java.util.HashMap<>();
     private double quietDistance;
     private Escape goal;
     private String state = "idle";
@@ -50,14 +53,19 @@ public final class MobSafetyProcess implements IBaritoneProcess, AbstractGameEve
         private final int[] xs, zs, distanceSq;
         private final boolean[] ranged;
         private final LongOpenHashSet hidden;
-        Escape(List<Mob> mobs, double extra, double scale, LongOpenHashSet hidden) {
-            int n = mobs.size();
+        Escape(List<Mob> mobs, List<BlockPos> remembered, double extra, double scale, LongOpenHashSet hidden) {
+            int n = mobs.size() + remembered.size();
             xs = new int[n]; zs = new int[n]; distanceSq = new int[n]; ranged = new boolean[n];
-            for (int i = 0; i < n; i++) {
+            for (int i = 0; i < mobs.size(); i++) {
                 Mob mob = mobs.get(i);
                 MobSafety.Profile profile = MobSafety.profile(mob);
                 double run = (profile.run() + extra) * scale;
                 xs[i] = mob.getBlockX(); zs[i] = mob.getBlockZ(); distanceSq[i] = (int) (run * run); ranged[i] = profile.ranged();
+            }
+            // Do not flee towards a hunter seen earlier, even if it is out of view now.
+            for (int j = 0; j < remembered.size(); j++) {
+                int i = mobs.size() + j; double run = (16 + extra) * scale;
+                xs[i] = remembered.get(j).getX(); zs[i] = remembered.get(j).getZ(); distanceSq[i] = (int) (run * run);
             }
             this.hidden = hidden;
         }
@@ -148,15 +156,61 @@ public final class MobSafetyProcess implements IBaritoneProcess, AbstractGameEve
         if (retreating) return true;
         if (!automation) return false; // manual play is never taken over
         if (MobSafety.enclosed(ctx)) return false; // boxed in (or a one-wide shaft): breaking out would be worse
+        if (replanRequested || lookAhead()) return true;
         Threat threat = assess(false);
         return threat != null && (cooldown == 0 || threat.imminent());
     }
 
+    /** Hunters remembered from earlier that are not among the mobs currently in view. */
+    private List<BlockPos> rememberedOutside(List<Mob> nearby) {
+        List<BlockPos> out = new ArrayList<>();
+        for (var entry : MobSafety.hunters().entrySet()) if (nearby.stream().noneMatch(m -> m.getId() == entry.getKey())) out.add(entry.getValue().pos());
+        return out;
+    }
+
+    /**
+     * Check the next stretch of the current path against remembered hunters; if it would walk into one, ask for a replan
+     * (which now costs that area heavily) before getting there. Bounded so an unavoidable route cannot thrash.
+     */
+    private boolean lookAhead() {
+        int now = MobSafety.clock();
+        if (now - lastLookahead < 10 || now - lastReplan < 40 || MobSafety.hunters().isEmpty()) return false;
+        lastLookahead = now;
+        if (now - replanWindow > 1200) { replanWindow = now; replans.clear(); }
+        var current = baritone.getPathingBehavior().getCurrent();
+        if (current == null) return false;
+        var positions = current.getPath().positions();
+        int start = current.getPosition() + 2, end = Math.min(positions.size(), start + 40);
+        BlockPos feet = ctx.playerFeet();
+        for (var entry : MobSafety.hunters().entrySet()) {
+            var hunter = entry.getValue();
+            int reach = Math.max(4, hunter.radius() - 2);
+            if (feet.distSqr(hunter.pos()) <= reach * reach || replans.getOrDefault(entry.getKey(), 0) >= 3) continue;
+            for (int i = start; i < end; i++) {
+                if (positions.get(i).distSqr(hunter.pos()) >= reach * reach) continue;
+                replans.merge(entry.getKey(), 1, Integer::sum);
+                replanRequested = true;
+                Entity mob = ctx.world().getEntity(entry.getKey());
+                replanReason = mob == null ? "a hostile seen earlier" : mob.getName().getString();
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override public PathingCommand onTick(boolean calcFailed, boolean isSafeToCancel) {
+        if (replanRequested && !retreating) {
+            replanRequested = false; lastReplan = MobSafety.clock();
+            setState("path ahead passes " + replanReason + "; replanning around it");
+            // Drop the segment; the paused task replans with the hunter's area costed heavily.
+            return new PathingCommand(baritone.getPathingBehavior().getGoal(), PathingCommandType.CANCEL_AND_SET_GOAL);
+        }
+        replanRequested = false;
         Threat threat = assess(retreating);
         if (!retreating) {
             if (threat == null) return new PathingCommand(null, PathingCommandType.DEFER);
             retreating = true; retreatTicks = clearTicks = failures = 0; goal = null; retreats++; current = threat.trigger();
+            MobSafety.rememberHunter(threat.trigger());
             // Leave stations normally so cursor and grid items return to the inventory.
             if (ctx.player().containerMenu != ctx.player().inventoryMenu) ctx.player().closeContainer();
             setState(String.format(Locale.ROOT, "retreating from %s %.1f blocks away", threat.trigger().getName().getString(), threat.distance()));
@@ -175,10 +229,11 @@ public final class MobSafetyProcess implements IBaritoneProcess, AbstractGameEve
             double scale = failures > 0 ? 0.5 : 1;
             LongOpenHashSet hidden = hiddenSpots(threat.nearby());
             // Keep the current route while its end is still safe from where the mobs are now; replanning stalls the escape.
-            Escape safe = new Escape(threat.nearby(), 0, scale, hidden);
+            List<BlockPos> remembered = rememberedOutside(threat.nearby());
+            Escape safe = new Escape(threat.nearby(), remembered, 0, scale, hidden);
             var current = baritone.getPathingBehavior().getCurrent();
             BlockPos end = current == null ? ctx.playerFeet() : current.getPath().getDest();
-            if (goal == null || !safe.isInGoal(end)) goal = new Escape(threat.nearby(), MARGIN, scale, hidden);
+            if (goal == null || !safe.isInGoal(end)) goal = new Escape(threat.nearby(), remembered, MARGIN, scale, hidden);
         }
         return goal == null ? new PathingCommand(null, PathingCommandType.REQUEST_PAUSE) : new PathingCommand(goal, PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH);
     }
@@ -196,6 +251,17 @@ public final class MobSafetyProcess implements IBaritoneProcess, AbstractGameEve
 
     @Override public void onTick(TickEvent event) {
         if (event.getType() == TickEvent.Type.OUT) { reset(); automation = false; return; }
+        MobSafety.tick();
+        if (MobSafety.enabled() && ctx.player() != null && MobSafety.clock() % 5 == 0) {
+            var player = ctx.player();
+            for (Entity entity : (Iterable<Entity>) ctx.entitiesStream()::iterator) {
+                if (!(entity instanceof Mob mob)) continue;
+                if (MobSafety.dangerous(entity, player)) {
+                    // Aggressive and close, or already remembered: keep its position fresh.
+                    if (player.distanceTo(entity) < 12 || MobSafety.hunters().containsKey(mob.getId())) MobSafety.rememberHunter(mob);
+                } else if (MobSafety.hunters().containsKey(mob.getId()) && (!mob.isAlive() || player.distanceTo(mob) > 24)) MobSafety.forget(mob.getId());
+            }
+        }
         // Runs after PathingBehavior, so this is the process that controlled this tick.
         automation = baritone.getPathingControlManager().mostRecentInControl().filter(process -> process != this).isPresent();
         if (cooldown > 0) cooldown--;

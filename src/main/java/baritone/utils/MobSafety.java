@@ -40,7 +40,12 @@ import net.minecraft.world.entity.player.Player;
 
 /** Hostile-mob classification and the persistent avoidance preset shared by planning and retreat. */
 public final class MobSafety {
-    public static final double PATH_COEFFICIENT = 4.0;
+    public static final double PATH_COEFFICIENT = 4.0, HUNTER_COEFFICIENT = 8.0;
+    /** Last known position of a mob that hunted the player; kept for a minute after it was last seen. */
+    public record Hunter(net.minecraft.core.BlockPos pos, int radius, int seen) {}
+    private static final java.util.Map<Integer, Hunter> hunters = new java.util.concurrent.ConcurrentHashMap<>();
+    private static volatile int clock;
+    private static java.lang.reflect.Constructor<?> avoidance;
     private static volatile boolean enabled = true;
     private static boolean preferenceLoaded;
     private static Object[] previousSettings;
@@ -108,6 +113,33 @@ public final class MobSafety {
             if (world.getBlockState(p).getCollisionShape(world, p).isEmpty()) return false;
         }
         return true;
+    }
+
+    public static void tick() {
+        clock++;
+        if (clock % 20 == 0) hunters.values().removeIf(h -> clock - h.seen() > 1200);
+    }
+    public static int clock() { return clock; }
+    public static void rememberHunter(Mob mob) { hunters.put(mob.getId(), new Hunter(mob.blockPosition(), profile(mob).radius(), clock)); }
+    public static void forget(int id) { hunters.remove(id); }
+    public static java.util.Map<Integer, Hunter> hunters() { return hunters; }
+
+    /**
+     * Called as upstream Avoidance.create returns: adds a strong extra cost around remembered hunters, including ones no
+     * longer in view, so paths and goals near them become a last resort. {@code type} is the (obfuscated) Avoidance class.
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static void augment(java.util.List list, IPlayerContext ctx, Class<?> type) {
+        if (!enabled || hunters.isEmpty() || !BaritoneAPI.getSettings().avoidance.value) return;
+        try {
+            if (avoidance == null || avoidance.getDeclaringClass() != type) {
+                avoidance = type.getDeclaredConstructor(net.minecraft.core.BlockPos.class, double.class, int.class);
+                avoidance.setAccessible(true);
+            }
+            for (Hunter hunter : hunters.values()) list.add(avoidance.newInstance(hunter.pos(), HUNTER_COEFFICIENT, hunter.radius()));
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            // Planning continues with live mobs only.
+        }
     }
 
     public static boolean enabled() { return enabled; }

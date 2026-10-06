@@ -10,11 +10,9 @@ import java.util.stream.Stream;
 /** Persistent toggle for eating (and, during diamondpickaxe, hunting) while Baritone tasks run. */
 public final class AutoFoodCommand extends Command {
     private final AutoFood process;
-    public AutoFoodCommand(IBaritone baritone) {
+    public AutoFoodCommand(IBaritone baritone, AutoFood process) {
         super(baritone, "autoeat", "autofood");
-        process = new AutoFood(baritone);
-        baritone.getPathingControlManager().registerProcess(process);
-        baritone.getGameEventHandler().registerEventListener(process);
+        this.process = process;
     }
     @Override public void execute(String label, IArgConsumer args) {
         try {

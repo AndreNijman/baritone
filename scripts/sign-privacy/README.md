@@ -305,6 +305,19 @@ four logs, and eight before the first pickaxe, so plank fuel does not run out.
 Before crafting or placing a crafting table it uses any table within sixteen blocks.
 It only ever picks up tables it placed itself.
 
+`#getfood [count|stop|status]` runs a standalone food trip without another task:
+it hunts nearby farm animals until it holds that many food items (default 8),
+collects the meat, eats if hungry, then stops.
+
+Mob safety remembers each mob that hunted the player (made it retreat, or came
+within twelve blocks while aggressive) for a minute, even out of view. Remembered
+hunters add a strong extra path cost (combined about 32 times the normal cost in
+their radius), so routes and mining targets near them become a last resort, and
+retreats do not head towards them. Every half second the next forty steps of the
+current path are checked; if they would pass within reach of a remembered hunter,
+the path is replanned before getting there (at most once every two seconds and
+three times per mob per minute).
+
 ### What was tested (compat.9)
 
 Rendered clean-room trials on the disposable Paper/Grim server (report:
