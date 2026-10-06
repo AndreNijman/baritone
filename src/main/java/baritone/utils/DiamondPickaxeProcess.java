@@ -8,6 +8,7 @@ import baritone.api.event.events.TickEvent;
 import baritone.api.event.listener.AbstractGameEventListener;
 import baritone.api.pathing.goals.GoalBlock;
 import baritone.api.pathing.goals.GoalGetToBlock;
+import baritone.api.pathing.goals.GoalRunAway;
 import baritone.api.process.*;
 import baritone.api.utils.*;
 import baritone.api.utils.input.Input;
@@ -38,8 +39,8 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
     private int craftedBefore, recipeTick, placingSince;
     private final Set<BlockPos> rejectedPlacements=new HashSet<>();
     private AbstractContainerMenu ownedMenu;
-    private BlockPos table, furnace, placing, pickup;
-    private int pickupTick, tablesBefore;
+    private BlockPos table, furnace, placing, pickup, relocateFrom;
+    private int pickupTick, tablesBefore, tablePlacedTick, furnacePlacedTick, resyncUntil, rejections, relocations, relocateTick, tablesCrafted;
     private net.minecraft.world.level.Level world;
 
     public DiamondPickaxeProcess(IBaritone baritone) { this.baritone=baritone;ctx=baritone.getPlayerContext(); }
@@ -49,7 +50,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         if (ctx.player()==null || ctx.world()==null) { log("Join a world first");return; }
         if (ctx.player().containerMenu!=ctx.player().inventoryMenu || !ctx.player().inventoryMenu.getCarried().isEmpty()) { log("Close the current container and clear the cursor first");return; }
         baritone.getPathingBehavior().cancelEverything();
-        world=ctx.world();tick=lastClick=progressTick=0;retries=0;table=furnace=placing=pickup=null;recipe=null;ownedMenu=null;rejectedPlacements.clear();
+        world=ctx.world();tick=lastClick=progressTick=0;retries=0;table=furnace=placing=pickup=relocateFrom=null;recipe=null;ownedMenu=null;rejectedPlacements.clear();resyncUntil=rejections=relocations=tablesCrafted=0;
         var s=BaritoneAPI.getSettings();
         override(s.allowBreak,true);override(s.allowPlace,true);override(s.allowInventory,false);
         // Recipe ingredients must never be used as path scaffolding.
@@ -108,6 +109,8 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
             }
             if(!safe) return pause();
             baritone.getInputOverrideHandler().clearAllKeys();
+            // After the server undid an action, give it time to resend the true inventory before counting items.
+            if(tick<resyncUntil) return pause();
             if(pickup!=null) return collectTable();
             if(recipe!=null) return craft();
             if(smelting) return smelt(calcFailed);
@@ -169,6 +172,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
     private PathingCommand beginCraft(DiamondPickaxeRecipes.Recipe value) {
         if(value.width()>2 && table==null && count(Items.CRAFTING_TABLE)==0) {
             if(planks()<4)return wood(4);
+            if(++tablesCrafted>3) { stop("Crafted three crafting tables this run but they keep disappearing; the server may be undoing placements. Rejoin to resync, then restart");return null; }
             value=DiamondPickaxeRecipes.table();
         }
         recipe=value;craftedBefore=count(value.output());recipeTick=tick;pendingSlot=-1;
@@ -255,18 +259,38 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         if((block==Blocks.CRAFTING_TABLE && ctx.player().containerMenu instanceof CraftingMenu) || (block==Blocks.FURNACE && ctx.player().containerMenu instanceof FurnaceMenu)) { ownedMenu=ctx.player().containerMenu;return null; }
         if(ctx.player().containerMenu!=ctx.player().inventoryMenu) { stop("Unexpected container; leaving it intact");return pause(); }
         BlockPos pos=block==Blocks.CRAFTING_TABLE ? table : furnace;
-        if(pos!=null && ctx.world().hasChunkAt(pos) && !ctx.world().getBlockState(pos).is(block)) { if(block==Blocks.CRAFTING_TABLE)table=null;else furnace=null;pos=null; }
+        if(pos!=null && ctx.world().hasChunkAt(pos) && !ctx.world().getBlockState(pos).is(block)) {
+            int placed=block==Blocks.CRAFTING_TABLE ? tablePlacedTick : furnacePlacedTick;
+            if(block==Blocks.CRAFTING_TABLE)table=null;else furnace=null;
+            if(tick-placed<200) {
+                // A station that vanishes right after placement was undone by the server (a ghost block).
+                rejectedPlacements.add(pos);resyncUntil=tick+40;
+                if(++rejections>=3) { stop("The server keeps removing placed stations (ghost blocks). Rejoin to resync, then restart");return pause(); }
+                log("Placed station disappeared; waiting for the server to resync and trying another spot");
+                return pause();
+            }
+            pos=null;
+        }
         if(pos==null && placing!=null && ctx.world().getBlockState(placing).is(block)) {
             pos=placing;
-            if(block==Blocks.CRAFTING_TABLE)table=pos;else furnace=pos;
-            placing=null;
+            if(block==Blocks.CRAFTING_TABLE) { table=pos;tablePlacedTick=tick; } else { furnace=pos;furnacePlacedTick=tick; }
+            placing=null;relocations=0;
         }
         if(pos==null) {
             if(count(item)==0) { recipe=null;smelting=false;return pause(); }
+            if(relocateFrom!=null) {
+                // Walk a few blocks to find open floor before trying again.
+                if(ctx.playerFeet().distSqr(relocateFrom)>=16 || tick-relocateTick>200) relocateFrom=null;
+                else return new PathingCommand(new GoalRunAway(5,relocateFrom),PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+            }
             if(placing==null) { placing=findPlacement();placingSince=tick; }
-            if(placing==null) { stop("No reachable dry floor for a crafting station");return pause(); }
+            if(placing==null) {
+                if(++relocations>3) { stop("No reachable floor for a crafting station after moving three times");return pause(); }
+                relocateFrom=ctx.playerFeet();relocateTick=tick;
+                return pause();
+            }
             pos=placing;
-            if(ctx.world().getBlockState(pos).is(block)) { if(block==Blocks.CRAFTING_TABLE)table=pos;else furnace=pos;placing=null;return pause(); }
+            if(ctx.world().getBlockState(pos).is(block)) { if(block==Blocks.CRAFTING_TABLE) { table=pos;tablePlacedTick=tick; } else { furnace=pos;furnacePlacedTick=tick; } placing=null;return pause(); }
             // Something (a block or entity) kept the click from landing: choose another spot.
             if(tick-placingSince>100) { rejectedPlacements.add(pos);placing=null;return pause(); }
             if(!equip(item))return pause();
@@ -314,10 +338,12 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
     }
     private BlockPos findPlacement() {
         BlockPos feet=ctx.playerFeet();
-        for(int radius=1;radius<=3;radius++) for(int x=-radius;x<=radius;x++)for(int z=-radius;z<=radius;z++) {
+        for(int radius=1;radius<=3;radius++) for(int dy:new int[]{0,-1,1}) for(int x=-radius;x<=radius;x++)for(int z=-radius;z<=radius;z++) {
             if(Math.max(Math.abs(x),Math.abs(z))!=radius)continue;
-            BlockPos p=feet.offset(x,0,z);
-            if(rejectedPlacements.contains(p) || !ctx.world().getBlockState(p).isAir() || !ctx.world().getFluidState(p).isEmpty() || !ctx.world().getBlockState(p.below()).isSolidRender() || Vec3.atCenterOf(p.below()).distanceToSqr(ctx.playerHead())>=16)continue;
+            BlockPos p=feet.offset(x,dy,z);
+            // Grass, ferns and snow layers are replaced by placement like air.
+            var at=ctx.world().getBlockState(p);
+            if(rejectedPlacements.contains(p) || !(at.isAir() || at.canBeReplaced()) || !ctx.world().getFluidState(p).isEmpty() || !ctx.world().getBlockState(p.below()).isSolidRender() || Vec3.atCenterOf(p.below()).distanceToSqr(ctx.playerHead())>=16)continue;
             // The support's top face must be visible from the eye, or the placement click can never land.
             if(RotationUtils.reachableOffset(ctx,p.below(),new Vec3(p.getX()+0.5,p.getY(),p.getZ()+0.5),ctx.playerController().getBlockReachDistance(),false).isPresent())return p;
         }

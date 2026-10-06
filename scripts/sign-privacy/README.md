@@ -247,6 +247,26 @@ mining, collects the drop and places it again at the next work site, instead of
 crafting a new table wherever it is. If the pickup fails within 20 seconds it
 continues and crafts another table when needed.
 
+## Realistic jumps and server-undone stations (compat.9)
+
+With realistic movement on, parkour jumps, step-ups and pillars pressed jump and
+forward the moment they started, while the eased camera was still turning from the
+previous direction; the jump left the wrong way, missed, and the path was retried
+from another side. These movements now wait on their starting block until the aim
+faces the jump (within 5 degrees for parkour, 10 for step-ups, looking down for a
+pillar), for at most one second, and never stop once under way.
+
+`#diamondpickaxe` treats a crafting table or furnace that vanishes within ten
+seconds of being placed as undone by the server (a ghost block): it waits two
+seconds for the inventory to resync before counting items, avoids that spot, and
+stops with a message after three such rejections. It crafts at most three tables
+per run instead of looping. Station spots may replace grass, ferns and snow layers,
+may be one block higher or lower, and when none is visible the bot walks a few
+blocks and looks again (three times) instead of stopping.
+
+Keep realistic movement on: with it off, rotations snap instantly and transmitted
+rotations need not match the camera, which servers can reject.
+
 ### What was tested (compat.9)
 
 Rendered clean-room trials on the disposable Paper/Grim server (report:
@@ -266,8 +286,10 @@ Those mob trials ran on earlier compat.9 candidates; the final JAR was only
 trialled on the flowing-water tunnel and the headless runtime suite was last
 run on an intermediate candidate. The skeleton fixture, the line-of-sight hiding
 and the retreat route-keeping changes have no rendered trial yet.
-The placement-aim fix and crafting-table pickup were checked only by compilation
-and the headless runtime suite. Real-world testing is still needed.
+The placement-aim fix, crafting-table pickup, jump alignment and ghost-station
+handling were checked by compilation and the headless runtime suite; the existing
+straight parkour route still arrives in 50 ticks (48 sprinting, 11 airborne), as in
+compat.7/8, so the jump hold does not stall an aligned jump. Real-world testing is still needed.
 
 ## Autonomous diamond pickaxe
 

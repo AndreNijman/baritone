@@ -5,13 +5,16 @@ import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import baritone.api.utils.Helper;
 import baritone.api.behavior.look.IAimProcessor;
+import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.IPlayerContext;
+import baritone.api.utils.RotationUtils;
 import baritone.api.utils.input.Input;
 import baritone.api.utils.Rotation;
 import baritone.api.utils.RayTraceUtils;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 import java.util.Collections;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -25,6 +28,8 @@ public final class GradualLook {
     private static final Map<IPlayerContext, Rotation> interactions = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<IPlayerContext, Rotation> tickRotations = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<IPlayerContext, Rotation> travelTargets = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<IPlayerContext, long[]> jumpHolds = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final int MAX_JUMP_HOLD = 20;
     private GradualLook() {}
     public static boolean enabled() { return enabled; }
     public static void enable(boolean value) {
@@ -145,6 +150,36 @@ public final class GradualLook {
         var movement=movements.get(index);
         return context.world().getFluidState(movement.getSrc()).is(FluidTags.WATER)
                 || context.world().getFluidState(movement.getDest()).is(FluidTags.WATER);
+    }
+    /**
+     * Jumping movements (parkour, ascend, pillar) press jump and forward the moment they start, while the eased camera may
+     * still be turning from the previous direction, so the jump leaves the wrong way and misses. Before leaving the
+     * source block, hold still until the aim faces the jump (or looks down for a pillar); never stop once under way.
+     */
+    public static void alignJump(IPlayerContext context, BetterBlockPos src, BetterBlockPos dest) {
+        var player = context.player();
+        if (!enabled || player == null || !player.onGround() || player.isInWater() || player.isFallFlying() || player.isPassenger()) return;
+        int dx = dest.x - src.x, dz = dest.z - src.z;
+        boolean pillar = dx == 0 && dz == 0 && dest.y > src.y, parkour = dx * dx + dz * dz >= 4, ascend = dest.y > src.y && !pillar;
+        if (!pillar && !parkour && !ascend || !context.playerFeet().equals(src)) return;
+        long key = BetterBlockPos.longHash(src.x, src.y, src.z) * 31 + BetterBlockPos.longHash(dest.x, dest.y, dest.z);
+        long[] hold = jumpHolds.computeIfAbsent(context, c -> new long[2]);
+        if (hold[0] != key) { hold[0] = key; hold[1] = 0; }
+        if (hold[1] >= MAX_JUMP_HOLD) return; // unusual look target (e.g. a block to break): let the movement proceed
+        Rotation actual = context.playerRotations();
+        boolean aligned;
+        if (pillar) aligned = actual.getPitch() >= 70;
+        else {
+            Rotation desired = RotationUtils.calcRotationFromVec3d(context.playerHead(), new Vec3(dest.x + 0.5, dest.y + 0.5, dest.z + 0.5), actual);
+            aligned = Math.abs(Rotation.normalizeYaw(desired.getYaw() - actual.getYaw())) <= (parkour ? 5 : 10);
+        }
+        if (aligned) return;
+        hold[1]++;
+        IBaritone baritone = BaritoneAPI.getProvider().getBaritoneForPlayer(player);
+        if (baritone == null) return;
+        var input = baritone.getInputOverrideHandler();
+        for (Input key2 : new Input[]{Input.MOVE_FORWARD, Input.MOVE_BACK, Input.MOVE_LEFT, Input.MOVE_RIGHT, Input.SPRINT, Input.JUMP})
+            input.setInputForceState(key2, false);
     }
     public static boolean canSteer(boolean grounded, boolean inWater, boolean jumping) {
         return inWater || grounded && !jumping;

@@ -147,6 +147,7 @@ public abstract class Movement implements IMovement, MovementHelper {
             baritone.getInputOverrideHandler().clearAllKeys();
         }
         baritone.utils.WaterPassage.settle(ctx, dest);
+        baritone.utils.GradualLook.alignJump(ctx, src, dest);
 
         return currentState.getStatus();
     }

@@ -33,6 +33,11 @@ public final class PatchWaterPassage implements Opcodes {
                                     super.visitVarInsn(ALOAD,0);super.visitFieldInsn(GETFIELD,MOVEMENT,"a","Lbaritone/api/utils/IPlayerContext;");
                                     super.visitVarInsn(ALOAD,0);super.visitFieldInsn(GETFIELD,MOVEMENT,"b","Lbaritone/api/utils/BetterBlockPos;");
                                     super.visitMethodInsn(INVOKESTATIC,"baritone/utils/WaterPassage","settle","(Lbaritone/api/utils/IPlayerContext;Lbaritone/api/utils/BetterBlockPos;)V",false);
+                                    // GradualLook.alignJump(ctx, src, dest)
+                                    super.visitVarInsn(ALOAD,0);super.visitFieldInsn(GETFIELD,MOVEMENT,"a","Lbaritone/api/utils/IPlayerContext;");
+                                    super.visitVarInsn(ALOAD,0);super.visitFieldInsn(GETFIELD,MOVEMENT,"a","Lbaritone/api/utils/BetterBlockPos;");
+                                    super.visitVarInsn(ALOAD,0);super.visitFieldInsn(GETFIELD,MOVEMENT,"b","Lbaritone/api/utils/BetterBlockPos;");
+                                    super.visitMethodInsn(INVOKESTATIC,"baritone/utils/GradualLook","alignJump","(Lbaritone/api/utils/IPlayerContext;Lbaritone/api/utils/BetterBlockPos;Lbaritone/api/utils/BetterBlockPos;)V",false);
                                 }
                                 super.visitInsn(opcode);
                             }
