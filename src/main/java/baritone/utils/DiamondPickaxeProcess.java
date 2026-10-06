@@ -29,7 +29,10 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
     private final IBaritone baritone;
     private final IPlayerContext ctx;
     private final Map<Settings.Setting<?>,Object> saved=new LinkedHashMap<>(), applied=new LinkedHashMap<>();
-    private boolean active, mining, smelting, forcedRealistic;
+    private boolean active, mining, smelting, forcedRealistic, digging, resumeAfterDeath;
+    private int digNeed, digFailures, digLast, digProgressTick, clock, deadTicks, aliveTicks;
+    private String digName;
+    private final ArrayDeque<Integer> deaths=new ArrayDeque<>();
     private String stage="Not started";
     private int tick, lastClick, progressTick, lastCount, retries, pendingSlot=-1;
     private Predicate<ItemStack> gathering;
@@ -50,7 +53,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         if (ctx.player()==null || ctx.world()==null) { log("Join a world first");return; }
         if (ctx.player().containerMenu!=ctx.player().inventoryMenu || !ctx.player().inventoryMenu.getCarried().isEmpty()) { log("Close the current container and clear the cursor first");return; }
         baritone.getPathingBehavior().cancelEverything();
-        world=ctx.world();tick=lastClick=progressTick=0;retries=0;table=furnace=placing=pickup=relocateFrom=null;recipe=null;ownedMenu=null;rejectedPlacements.clear();resyncUntil=rejections=relocations=tablesCrafted=0;
+        world=ctx.world();tick=lastClick=progressTick=0;retries=0;table=furnace=placing=pickup=relocateFrom=null;digging=false;recipe=null;ownedMenu=null;rejectedPlacements.clear();resyncUntil=rejections=relocations=tablesCrafted=0;
         var s=BaritoneAPI.getSettings();
         override(s.allowBreak,true);override(s.allowPlace,true);override(s.allowInventory,false);
         // Recipe ingredients must never be used as path scaffolding.
@@ -69,7 +72,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
     }
     public void stop(String reason) {
         if (!active) return;
-        active=false;mining=smelting=false;recipe=null;placing=null;pendingSlot=-1;
+        active=false;mining=smelting=digging=false;recipe=null;placing=null;pendingSlot=-1;
         baritone.getMineProcess().cancel();baritone.getInputOverrideHandler().clearAllKeys();
         closeMenu();restore();stage=reason;log(reason);
         if(forcedRealistic) { forcedRealistic=false;GradualLook.enable(false); }
@@ -80,8 +83,27 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
     @Override public void onLostControl() { stop("Cancelled"); }
     @Override public String displayName0() { return "Diamond pickaxe: "+stage; }
     @Override public String displayName() { return displayName0()+(active ? "" : " (idle)"); }
-    @Override public void onPlayerDeath() { stop("Stopped after death; run diamondpickaxe again after respawning"); }
-    @Override public void onTick(TickEvent event) { if(active && event.getType()==TickEvent.Type.OUT) stop("Disconnected"); }
+    @Override public void onPlayerDeath() {
+        if(!active)return;
+        deaths.addLast(clock);
+        while(!deaths.isEmpty() && clock-deaths.peekFirst()>6000)deaths.removeFirst();
+        if(deaths.size()>=3) { resumeAfterDeath=false;stop("Died three times in five minutes; not restarting");return; }
+        resumeAfterDeath=true;stop("Died; respawning and continuing");
+    }
+    @Override public void onTick(TickEvent event) {
+        if(event.getType()==TickEvent.Type.OUT) { if(active)stop("Disconnected");resumeAfterDeath=false;return; }
+        clock++;
+        if(!resumeAfterDeath || ctx.player()==null)return;
+        var gui=ctx.minecraft().gui;
+        if(!ctx.player().isAlive() || gui.screen() instanceof net.minecraft.client.gui.screens.DeathScreen) {
+            aliveTicks=0;
+            // Press respawn the way the death screen's button does, once it would be enabled.
+            if(gui.screen() instanceof net.minecraft.client.gui.screens.DeathScreen && ++deadTicks>=30) { ctx.player().respawn();gui.setScreen(null);deadTicks=0; }
+            return;
+        }
+        // Let the server's respawn teleport land and chunks load before planning from the new spot.
+        if(++aliveTicks>=100) { resumeAfterDeath=false;aliveTicks=0;start(); }
+    }
     private PathingCommand pause() { return new PathingCommand(null,PathingCommandType.REQUEST_PAUSE); }
     private void setStage(String value) { if(!stage.equals(value)) { stage=value;progressTick=tick;log(value); } }
     private int count(Predicate<ItemStack> filter) { return ctx.player().getInventory().getNonEquipmentItems().stream().filter(filter).mapToInt(ItemStack::getCount).sum(); }
@@ -95,6 +117,17 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         tick++;
         if (count(Items.DIAMOND_PICKAXE)>0) { stop("Complete — diamond pickaxe is in your inventory");return null; }
         try {
+            if (digging) {
+                if(safe && !prepareBuildingBlocks())return pause();
+                int n=count(Items.COBBLESTONE);
+                if (n>=digNeed) { digging=false;progressTick=tick;return new PathingCommand(null,PathingCommandType.CANCEL_AND_SET_GOAL); }
+                if (n!=digLast) { digLast=n;digProgressTick=tick;setStage("Digging down for "+digName+" ("+n+"/"+digNeed+")"); }
+                if (calcFailed)digFailures++;
+                BlockPos target=stoneBelow();
+                // Fall back to ordinary mining when there is no stone below or digging stalls.
+                if (target==null || digFailures>=3 || tick-digProgressTick>1200) { digging=false;return gather(digName,s->s.is(Items.COBBLESTONE),digNeed,Blocks.STONE,Blocks.COBBLESTONE); }
+                return new PathingCommand(new GoalBlock(target),PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+            }
             if (mining) {
                 if(safe && !prepareBuildingBlocks())return pause();
                 int n=count(gathering);
@@ -121,6 +154,31 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
             if(tick-progressTick>1800) { stop("Crafting or placement stalled during "+stage);return null; }
             return plan();
         } catch (RuntimeException error) { stop("Stopped: "+error.getClass().getSimpleName()+" — "+error.getMessage());return null; }
+    }
+    /** Stone is normally right below: dig down to it instead of walking to distant exposed stone. */
+    private PathingCommand dig(String name,int quantity) {
+        if(stoneBelow()==null)return gather(name,s->s.is(Items.COBBLESTONE),quantity,Blocks.STONE,Blocks.COBBLESTONE);
+        if(ctx.player().getInventory().getNonEquipmentItems().stream().noneMatch(ItemStack::isEmpty)) { stop("Inventory is full; free space and restart");return null; }
+        closeMenu();if(!equipBestPick() || !prepareBuildingBlocks())return pause();
+        digging=true;digNeed=quantity;digName=name;digFailures=0;digLast=count(Items.COBBLESTONE);digProgressTick=tick;
+        setStage("Digging down for "+name+" ("+digLast+"/"+quantity+")");
+        return pause();
+    }
+    /** Nearest stone within twelve blocks below, preferring straight down; columns stop at liquids. */
+    private BlockPos stoneBelow() {
+        BlockPos feet=ctx.playerFeet(),best=null;
+        double bestCost=Double.MAX_VALUE;
+        for(int dx=-2;dx<=2;dx++)for(int dz=-2;dz<=2;dz++)for(int dy=-1;dy>=-12;dy--) {
+            BlockPos p=feet.offset(dx,dy,dz);
+            var state=ctx.world().getBlockState(p);
+            if(!state.getFluidState().isEmpty())break;
+            if(state.is(Blocks.STONE) || state.is(Blocks.COBBLESTONE)) {
+                double cost=-dy+1.5*(Math.abs(dx)+Math.abs(dz));
+                if(cost<bestCost) { bestCost=cost;best=p; }
+                break;
+            }
+        }
+        return best;
     }
     private PathingCommand gather(String name,Predicate<ItemStack> filter,int quantity,Block... blocks) {
         if(ctx.player().getInventory().getNonEquipmentItems().stream().noneMatch(ItemStack::isEmpty)) { stop("Inventory is full; free space and restart");return null; }
@@ -152,14 +210,14 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
                     if(planks()<3)return wood(3);
                     return beginCraft(DiamondPickaxeRecipes.pickaxe(Items.WOODEN_PICKAXE,null));
                 }
-                if(count(Items.COBBLESTONE)<3)return gather("cobblestone",s->s.is(Items.COBBLESTONE),3,Blocks.STONE,Blocks.COBBLESTONE);
+                if(count(Items.COBBLESTONE)<3)return dig("cobblestone",3);
                 if(count(Items.STICK)<2) { if(planks()<2)return wood(2);return beginCraft(DiamondPickaxeRecipes.sticks()); }
                 return beginCraft(DiamondPickaxeRecipes.pickaxe(Items.STONE_PICKAXE,Items.COBBLESTONE));
             }
             if(count(Items.IRON_INGOT)<3) {
                 if(count(Items.RAW_IRON)+count(Items.IRON_INGOT)<3)return gather("raw iron",s->s.is(Items.RAW_IRON),3-count(Items.IRON_INGOT),Blocks.IRON_ORE,Blocks.DEEPSLATE_IRON_ORE);
                 if(furnace==null && count(Items.FURNACE)==0) {
-                    if(count(Items.COBBLESTONE)<8)return gather("furnace cobblestone",s->s.is(Items.COBBLESTONE),8,Blocks.STONE,Blocks.COBBLESTONE);
+                    if(count(Items.COBBLESTONE)<8)return dig("furnace cobblestone",8);
                     return beginCraft(DiamondPickaxeRecipes.furnace());
                 }
                 if(count(Items.COAL)+count(Items.CHARCOAL)==0 && planks()<3)return wood(3);

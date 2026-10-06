@@ -272,6 +272,16 @@ task when it is off, and restores your setting (without saving) when the task en
 Station placement and use also wait until the eased aim has settled within two
 degrees of the target before clicking.
 
+## Respawn and continue; dig down for stone (compat.9)
+
+When the player dies during `#diamondpickaxe`, the task presses respawn (after the
+death screen's usual delay), waits five seconds for the server's respawn teleport
+and chunks to settle, then restarts from the current inventory. Three deaths within
+five minutes stop it instead. For cobblestone it digs straight down to the nearest
+stone within twelve blocks below (preferring directly underneath) rather than
+walking to distant exposed stone, falling back to ordinary mining if there is none,
+planning fails three times, or no cobblestone arrives for a minute.
+
 ### What was tested (compat.9)
 
 Rendered clean-room trials on the disposable Paper/Grim server (report:
