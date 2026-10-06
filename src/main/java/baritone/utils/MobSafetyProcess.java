@@ -16,6 +16,7 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -159,6 +160,12 @@ public final class MobSafetyProcess implements IBaritoneProcess, AbstractGameEve
         if (player.isCreative() || player.isSpectator() || !player.isAlive()) return null;
         if (player.isUnderWater() && player.getAirSupply() <= player.getMaxAirSupply() * 3 / 10) return "about to drown";
         if (player.isInLava()) return "in lava";
+        // Any creeper close by: teleport rather than gamble on outrunning the blast.
+        for (Entity entity : (Iterable<Entity>) ctx.entitiesStream()::iterator) {
+            if (!(entity instanceof Creeper creeper) || !MobSafety.dangerous(entity, player)) continue;
+            boolean swelling = creeper.getSwellDir() > 0 || creeper.isIgnited() || creeper.getSwelling(1f) > 0;
+            if (player.distanceTo(entity) < (swelling ? 9 : 7)) return "creeper close";
+        }
         if (player.getHealth() <= 6 && MobSafety.clock() - lastHurt < 60) {
             if (player.isOnFire()) return "burning on low health";
             for (Entity entity : (Iterable<Entity>) ctx.entitiesStream()::iterator)

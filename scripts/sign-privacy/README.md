@@ -319,7 +319,8 @@ the path is replanned before getting there (at most once every two seconds and
 three times per mob per minute).
 
 Emergency teleport: while a Baritone task runs, if the player is about to drown (under
-water with less than 30% air), in lava, or on three hearts or less within three seconds
+water with less than 30% air), in lava, near a creeper (within seven blocks, nine if
+swelling), or on three hearts or less within three seconds
 of being hurt with a hostile within ten blocks or while burning, mob safety stops
 everything, sends `/rtp` once and stands still for up to fifteen seconds for the
 teleport (warm-ups require it), then resumes. It waits two minutes before another
