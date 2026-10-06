@@ -24,7 +24,10 @@ import net.minecraft.world.entity.monster.Zoglin;
 import net.minecraft.world.entity.monster.breeze.Breeze;
 import net.minecraft.world.entity.monster.hoglin.Hoglin;
 import net.minecraft.world.entity.monster.illager.SpellcasterIllager;
+import net.minecraft.world.entity.monster.illager.AbstractIllager;
 import net.minecraft.world.entity.monster.illager.Vindicator;
+import net.minecraft.world.entity.monster.skeleton.AbstractSkeleton;
+import net.minecraft.world.entity.monster.zombie.Zombie;
 import net.minecraft.world.entity.monster.piglin.AbstractPiglin;
 import net.minecraft.world.entity.monster.warden.Warden;
 import net.minecraft.world.entity.monster.zombie.Drowned;
@@ -32,9 +35,7 @@ import net.minecraft.world.item.BowItem;
 import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.TridentItem;
-import net.minecraft.world.entity.monster.spider.CaveSpider;
 import net.minecraft.world.entity.monster.spider.Spider;
-import net.minecraft.world.entity.monster.zombie.ZombifiedPiglin;
 import net.minecraft.world.entity.player.Player;
 
 /** Hostile-mob classification and the persistent avoidance preset shared by planning and retreat. */
@@ -56,9 +57,13 @@ public final class MobSafety {
         // Retreating on foot cannot outrun these; planning still avoids their surroundings.
         if (entity instanceof Phantom || entity instanceof Ghast || entity instanceof Vex || entity instanceof EnderDragon) return false;
         if (entity instanceof Enderman enderman) return enderman.isCreepy();
-        if (entity instanceof ZombifiedPiglin || entity instanceof AbstractPiglin) return ((Mob) entity).isAggressive();
-        if (entity instanceof Spider && !(entity instanceof CaveSpider)) return ((Mob) entity).isAggressive() || player.getLightLevelDependentMagicValue() < 0.5f;
-        return true;
+        Mob mob = (Mob) entity;
+        // Melee, bow and crossbow attackers raise the synced aggressive flag only while going for a target; idle or
+        // wandering ones (and spiders in daylight) are not a threat. Trident drowned use a goal that never sets it.
+        boolean flagged = entity instanceof Zombie && !(entity instanceof Drowned && mob.getMainHandItem().getItem() instanceof TridentItem)
+                || entity instanceof AbstractSkeleton || entity instanceof Spider || entity instanceof AbstractPiglin
+                || entity instanceof AbstractIllager && !(entity instanceof SpellcasterIllager);
+        return !flagged || mob.isAggressive();
     }
 
     /**

@@ -37,6 +37,9 @@ public final class MobSafetyProcess implements IBaritoneProcess, AbstractGameEve
     private boolean automation, retreating, assessedExit;
     private int retreatTicks, clearTicks, cooldown, failures, goalAge, retreats, assessedTick = Integer.MIN_VALUE;
     private Threat assessed;
+    private Mob current;
+    private int quietId = -1, quietUntil;
+    private double quietDistance;
     private Escape goal;
     private String state = "idle";
 
@@ -104,7 +107,9 @@ public final class MobSafetyProcess implements IBaritoneProcess, AbstractGameEve
             MobSafety.Profile profile = MobSafety.profile(mob);
             if (Math.abs(mob.getY() - player.getY()) > profile.reachY()) continue;
             double reach = player.hasLineOfSight(mob) ? profile.sight() : profile.blind();
-            if (distance < reach + (exiting ? HYSTERESIS : 0)) {
+            // A mob just retreated from must come clearly closer before it triggers again, or retreats flap.
+            boolean quiet = !exiting && mob.getId() == quietId && player.tickCount < quietUntil && !profile.urgent() && distance > quietDistance - 1.5;
+            if (!quiet && distance < reach + (exiting ? HYSTERESIS : 0)) {
                 boolean urgent = profile.urgent();
                 if (trigger == null || urgent && !imminent || urgent == imminent && distance < triggerDistance) { trigger = mob; triggerDistance = distance; }
                 imminent |= urgent;
@@ -150,7 +155,7 @@ public final class MobSafetyProcess implements IBaritoneProcess, AbstractGameEve
         Threat threat = assess(retreating);
         if (!retreating) {
             if (threat == null) return new PathingCommand(null, PathingCommandType.DEFER);
-            retreating = true; retreatTicks = clearTicks = failures = 0; goal = null; retreats++;
+            retreating = true; retreatTicks = clearTicks = failures = 0; goal = null; retreats++; current = threat.trigger();
             // Leave stations normally so cursor and grid items return to the inventory.
             if (ctx.player().containerMenu != ctx.player().inventoryMenu) ctx.player().closeContainer();
             setState(String.format(Locale.ROOT, "retreating from %s %.1f blocks away", threat.trigger().getName().getString(), threat.distance()));
@@ -179,6 +184,10 @@ public final class MobSafetyProcess implements IBaritoneProcess, AbstractGameEve
 
     private PathingCommand finish(String message, int pause) {
         retreating = false; goal = null; cooldown = pause;
+        if (current != null && current.isAlive() && ctx.player() != null) {
+            quietId = current.getId(); quietDistance = ctx.player().distanceTo(current); quietUntil = ctx.player().tickCount + 300;
+        }
+        current = null;
         setState(message);
         // Drop the retreat segment so the paused task plans afresh from here.
         return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
