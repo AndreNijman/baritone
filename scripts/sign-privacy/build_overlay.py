@@ -42,6 +42,7 @@ CLASSES = [
     "baritone/utils/MobSafetyProcess$Escape.class",
     "baritone/cc.class",
     "baritone/cb.class",
+    "baritone/dt.class",
     "baritone/utils/WaterPassage.class",
 ]
 
@@ -80,12 +81,13 @@ mkdir -p /scratch/home /scratch/tmp /scratch/classes /scratch/tools /scratch/tes
 JAVAC_FLAGS='-J-Xmx256m -J-XX:CompressedClassSpaceSize=64m -J-XX:ReservedCodeCacheSize=64m -J-XX:ActiveProcessorCount=2'
 JAVA_FLAGS='-Xmx256m -XX:CompressedClassSpaceSize=64m -XX:ReservedCodeCacheSize=64m -XX:ActiveProcessorCount=2'
 "$PATCH_JDK/bin/javac" $JAVAC_FLAGS --release 25 -d /scratch/classes /source/src/launch/java/baritone/launch/privacy/SignTextPrivacy.java
-"$PATCH_JDK/bin/javac" $JAVAC_FLAGS --release 17 -cp /deps/asm.jar -d /scratch/tools /source/scripts/sign-privacy/GenerateMixin.java /source/scripts/compatibility/PatchMovementInput.java /source/scripts/compatibility/PatchMining.java /source/scripts/compatibility/PatchGradualLook.java /source/scripts/compatibility/PatchMobAvoidance.java /source/scripts/compatibility/PatchWaterPassage.java
+"$PATCH_JDK/bin/javac" $JAVAC_FLAGS --release 17 -cp /deps/asm.jar -d /scratch/tools /source/scripts/sign-privacy/GenerateMixin.java /source/scripts/compatibility/PatchMovementInput.java /source/scripts/compatibility/PatchMining.java /source/scripts/compatibility/PatchGradualLook.java /source/scripts/compatibility/PatchMobAvoidance.java /source/scripts/compatibility/PatchWaterPassage.java /source/scripts/compatibility/PatchPlacementAim.java
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar GenerateMixin /inputs/minecraft.jar /scratch/classes
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar PatchMovementInput /inputs/upstream.jar /scratch/classes
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar PatchMining /inputs/upstream.jar /scratch/classes
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar PatchMobAvoidance /inputs/upstream.jar /scratch/classes
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar PatchWaterPassage /inputs/upstream.jar /scratch/classes
+"$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar PatchPlacementAim /inputs/upstream.jar /scratch/classes
 "$PATCH_JDK/bin/javac" $JAVAC_FLAGS -proc:none --release 25 -cp "$LOOK_CP" -d /scratch/classes /source/src/main/java/baritone/utils/StopHotkey.java /source/src/main/java/baritone/utils/GradualLook.java /source/src/main/java/baritone/utils/GradualLookCommand.java /source/src/main/java/baritone/utils/DiamondPickaxeCommand.java /source/src/main/java/baritone/utils/DiamondPickaxeProcess.java /source/src/main/java/baritone/utils/DiamondPickaxeRecipes.java /source/src/main/java/baritone/utils/MobSafety.java /source/src/main/java/baritone/utils/MobSafetyCommand.java /source/src/main/java/baritone/utils/MobSafetyProcess.java /source/src/main/java/baritone/utils/WaterPassage.java
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar PatchGradualLook /inputs/upstream.jar /scratch/classes
 "$PATCH_JDK/bin/javac" $JAVAC_FLAGS --release 25 -cp /scratch/classes -d /scratch/tests $(find /source/scripts/sign-privacy/fixture -name '*.java')
@@ -122,7 +124,7 @@ PY
     classes = json.loads(payload)
     assert sorted(classes) == sorted(CLASSES), "Unexpected compiled files"
     decoded = {name: base64.b64decode(data, validate=True) for name, data in classes.items()}
-    assert sum(map(len, decoded.values())) < 196608  # MovementHelper alone is 23 KiB
+    assert sum(map(len, decoded.values())) < 262144  # MovementHelper and BuilderProcess are 23 and 31 KiB
     for line in lines:
         if not line.startswith("BUILD_CLASSES="):
             print(line)
@@ -149,6 +151,7 @@ PY
                 config["custom"]["diamondpickaxe"] = "Survival mining/crafting/smelting with reserved ingredients and dirt scaffolding"
                 config["custom"]["mobsafety"] = "Hostile-only path avoidance and retreat from nearby hostiles during Baritone tasks; persistent avoidmobs toggle"
                 config["custom"]["waterpassage"] = "Shallow horizontally flowing water is walkable and wet two-high entries float only to the floor (lake-fed tunnels)"
+                config["custom"]["placementaim"] = "Placement checks use the eventual aim so realistic turning still finds the placement face"
                 config["custom"]["stophotkey"] = "Numpad 9 executes stop, including in crafting screens"
                 config["custom"]["miningcompatibility"] = "Minecraft 26.3 normal Punch packets and held-item swing animation"
                 data = (json.dumps(config, indent=2) + "\n").encode()
@@ -162,9 +165,9 @@ PY
 
     with zipfile.ZipFile(options.upstream) as original, zipfile.ZipFile(destination) as patched:
         assert patched.testzip() is None
-        assert set(patched.namelist()) - set(original.namelist()) == set(CLASSES) - {"baritone/fp.class", "baritone/fj.class", "baritone/a.class", "baritone/f.class", "baritone/f$a.class", "baritone/f$b.class", "baritone/api/utils/RotationUtils.class", "baritone/api/behavior/look/IAimProcessor.class", "baritone/fz.class", "baritone/cc.class", "baritone/cb.class"}
+        assert set(patched.namelist()) - set(original.namelist()) == set(CLASSES) - {"baritone/fp.class", "baritone/fj.class", "baritone/a.class", "baritone/f.class", "baritone/f$a.class", "baritone/f$b.class", "baritone/api/utils/RotationUtils.class", "baritone/api/behavior/look/IAimProcessor.class", "baritone/fz.class", "baritone/cc.class", "baritone/cb.class", "baritone/dt.class"}
         changed = {name for name in original.namelist() if original.read(name) != patched.read(name)}
-        assert changed == {"mixins.baritone.json", "fabric.mod.json", "baritone/fp.class", "baritone/fj.class", "baritone/a.class", "baritone/f.class", "baritone/f$a.class", "baritone/f$b.class", "baritone/api/utils/RotationUtils.class", "baritone/api/behavior/look/IAimProcessor.class", "baritone/fz.class", "baritone/cc.class", "baritone/cb.class"}
+        assert changed == {"mixins.baritone.json", "fabric.mod.json", "baritone/fp.class", "baritone/fj.class", "baritone/a.class", "baritone/f.class", "baritone/f$a.class", "baritone/f$b.class", "baritone/api/utils/RotationUtils.class", "baritone/api/behavior/look/IAimProcessor.class", "baritone/fz.class", "baritone/cc.class", "baritone/cb.class", "baritone/dt.class"}
         assert not any("/lang/" in name for name in original.namelist())
     checksum = hashlib.sha256(destination.read_bytes()).hexdigest()
     destination.with_suffix(".jar.sha256").write_text(f"{checksum}  {destination.name}\n")
@@ -204,7 +207,7 @@ PY
         with zipfile.ZipFile(artifact) as archive:
             assert archive.testzip() is None
     print("Minecraft constructor: exactly one matching Component.getString call")
-    print("JAR verified: only eleven original classes and two metadata files changed; nineteen new classes; bundled libraries unchanged")
+    print("JAR verified: only twelve original classes and two metadata files changed; nineteen new classes; bundled libraries unchanged")
     print(f"Output: {destination}\nSHA-256: {checksum}")
     print(f"Test pack: {test_pack}\nComplete source: {source_archive}")
 

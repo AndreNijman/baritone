@@ -6,9 +6,11 @@ import baritone.api.IBaritone;
 import baritone.api.Settings;
 import baritone.api.event.events.TickEvent;
 import baritone.api.event.listener.AbstractGameEventListener;
+import baritone.api.pathing.goals.GoalBlock;
 import baritone.api.pathing.goals.GoalGetToBlock;
 import baritone.api.process.*;
 import baritone.api.utils.*;
+import baritone.api.utils.input.Input;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.tags.ItemTags;
@@ -36,7 +38,8 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
     private int craftedBefore, recipeTick, placingSince;
     private final Set<BlockPos> rejectedPlacements=new HashSet<>();
     private AbstractContainerMenu ownedMenu;
-    private BlockPos table, furnace, placing;
+    private BlockPos table, furnace, placing, pickup;
+    private int pickupTick, tablesBefore;
     private net.minecraft.world.level.Level world;
 
     public DiamondPickaxeProcess(IBaritone baritone) { this.baritone=baritone;ctx=baritone.getPlayerContext(); }
@@ -46,7 +49,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         if (ctx.player()==null || ctx.world()==null) { log("Join a world first");return; }
         if (ctx.player().containerMenu!=ctx.player().inventoryMenu || !ctx.player().inventoryMenu.getCarried().isEmpty()) { log("Close the current container and clear the cursor first");return; }
         baritone.getPathingBehavior().cancelEverything();
-        world=ctx.world();tick=lastClick=progressTick=0;retries=0;table=furnace=placing=null;recipe=null;ownedMenu=null;rejectedPlacements.clear();
+        world=ctx.world();tick=lastClick=progressTick=0;retries=0;table=furnace=placing=pickup=null;recipe=null;ownedMenu=null;rejectedPlacements.clear();
         var s=BaritoneAPI.getSettings();
         override(s.allowBreak,true);override(s.allowPlace,true);override(s.allowInventory,false);
         // Recipe ingredients must never be used as path scaffolding.
@@ -105,6 +108,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
             }
             if(!safe) return pause();
             baritone.getInputOverrideHandler().clearAllKeys();
+            if(pickup!=null) return collectTable();
             if(recipe!=null) return craft();
             if(smelting) return smelt(calcFailed);
             if(ctx.player().containerMenu!=ctx.player().inventoryMenu) { stop("A different container was opened");return null; }
@@ -195,7 +199,13 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         pendingSlot=target;click(menu,source,0,ContainerInput.PICKUP);return false;
     }
     private PathingCommand craft() {
-        if(count(recipe.output())>craftedBefore) { recipe=null;pendingSlot=-1;closeMenu();progressTick=tick;return pause(); }
+        if(count(recipe.output())>craftedBefore) {
+            boolean usedTable=recipe.width()>2;
+            recipe=null;pendingSlot=-1;closeMenu();progressTick=tick;
+            // Carry the table to the next work site rather than crafting another one there.
+            if(usedTable && table!=null) { pickup=table;pickupTick=tick;tablesBefore=count(Items.CRAFTING_TABLE); }
+            return pause();
+        }
         if(tick-recipeTick>1800) { stop("Crafting timed out; server may reject the recipe or inventory actions");return null; }
         if(recipe.width()>2) {
             PathingCommand station=station(Blocks.CRAFTING_TABLE,Items.CRAFTING_TABLE);if(station!=null)return station;
@@ -276,6 +286,26 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
             useBlock(hit);lastClick=tick;
         }
         return pause();
+    }
+    /** Break the placed table with ordinary aimed mining and walk over the drop. */
+    private PathingCommand collectTable() {
+        boolean collected=count(Items.CRAFTING_TABLE)>tablesBefore;
+        if(collected || tick-pickupTick>400) {
+            if(!collected)log("Could not pick up the crafting table; another will be crafted if needed");
+            pickup=null;table=null;progressTick=tick;return pause();
+        }
+        if(ctx.player().containerMenu!=ctx.player().inventoryMenu) { closeMenu();return pause(); }
+        if(ctx.world().getBlockState(pickup).is(Blocks.CRAFTING_TABLE)) {
+            Optional<Rotation> reachable=RotationUtils.reachable(ctx,pickup,ctx.playerController().getBlockReachDistance());
+            if(reachable.isEmpty())return new PathingCommand(new GoalGetToBlock(pickup),PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+            baritone.getLookBehavior().updateTarget(reachable.get(),true);
+            if(ctx.objectMouseOver() instanceof BlockHitResult hit && hit.getType()==HitResult.Type.BLOCK && hit.getBlockPos().equals(pickup))
+                baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT,true);
+            return pause();
+        }
+        BlockPos drop=ctx.entitiesStream().filter(e->e instanceof net.minecraft.world.entity.item.ItemEntity item && item.getItem().is(Items.CRAFTING_TABLE) && e.distanceToSqr(Vec3.atCenterOf(pickup))<36)
+                .findFirst().map(net.minecraft.world.entity.Entity::blockPosition).orElse(pickup);
+        return new PathingCommand(new GoalBlock(drop),PathingCommandType.REVALIDATE_GOAL_AND_PATH);
     }
     private void useBlock(BlockHitResult hit) {
         var result=ctx.playerController().processRightClickBlock(ctx.player(),ctx.world(),InteractionHand.MAIN_HAND,hit);

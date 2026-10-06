@@ -9,8 +9,9 @@ The installable JAR is `dist/baritone-api-fabric-1.20.0-compat.9.jar`.
 Replace the existing Baritone JAR in the instance's `mods` directory with this file.
 Restart Minecraft, and run `#help` to confirm Baritone loads. Only one Baritone JAR
 should be installed. This is the API release with its normal commands and bundled
-nether pathfinder. Ten original classes are changed: input, mining, core initialization, look behavior,
-both aim processors, geometric reachability and its API, mob avoidance and water passability. Nineteen classes are added.
+nether pathfinder. Twelve original classes are changed: input, mining, core initialization, look behavior,
+both aim processors, geometric reachability and its API, mob avoidance, water passability, movement and
+builder placement checks. Nineteen classes are added.
 Every other original class and nested JAR is preserved byte for byte.
 
 ## What the patch does
@@ -74,7 +75,7 @@ resource, which alone is not proof that the corresponding mod is installed.
 - Initialized the real Baritone API, core pathing/input processes, and the
   help/goto/stop/mine/build/follow command registrations in the headless runtime.
 - Compiled the included mixin source against the real game and Mixin API.
-- Checked archive integrity: ten original classes and two metadata files change.
+- Checked archive integrity: twelve original classes and two metadata files change.
   Nineteen classes are added; bundled libraries are unchanged.
 - Passed 142,626 geometry and steering assertions covering wraparound, angle caps, pitch limits,
   mouse-sensitivity increments, convergence and disabling the controller.
@@ -232,6 +233,20 @@ never enters. Compat.9 allows a horizontally flowing water layer with open space
 above and a floor or more water below. Falling water, fully submerged water, water
 over a drop and all lava keep the upstream rule.
 
+## Placement with realistic aiming and a carried crafting table (compat.9)
+
+Baritone checks whether it can place a block (bridging, stepping up onto a placed
+block, climbing out of holes, `#build`) by ray-casting along the aim it will have.
+With realistic aiming that check used only the next bounded turn step, so a face
+more than one step away never qualified: the look target was never set and the bot
+retried until the player aimed for it. The checks now use the aim's eventual
+endpoint; the actual right click still waits until the crosshair is on the face.
+
+`#diamondpickaxe` now breaks its crafting table after each use with normal aimed
+mining, collects the drop and places it again at the next work site, instead of
+crafting a new table wherever it is. If the pickup fails within 20 seconds it
+continues and crafts another table when needed.
+
 ### What was tested (compat.9)
 
 Rendered clean-room trials on the disposable Paper/Grim server (report:
@@ -251,7 +266,8 @@ Those mob trials ran on earlier compat.9 candidates; the final JAR was only
 trialled on the flowing-water tunnel and the headless runtime suite was last
 run on an intermediate candidate. The skeleton fixture, the line-of-sight hiding
 and the retreat route-keeping changes have no rendered trial yet.
-Real-world testing is still needed.
+The placement-aim fix and crafting-table pickup were checked only by compilation
+and the headless runtime suite. Real-world testing is still needed.
 
 ## Autonomous diamond pickaxe
 
