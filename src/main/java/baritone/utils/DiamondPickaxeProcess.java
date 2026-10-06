@@ -29,7 +29,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
     private final IBaritone baritone;
     private final IPlayerContext ctx;
     private final Map<Settings.Setting<?>,Object> saved=new LinkedHashMap<>(), applied=new LinkedHashMap<>();
-    private boolean active, mining, smelting;
+    private boolean active, mining, smelting, forcedRealistic;
     private String stage="Not started";
     private int tick, lastClick, progressTick, lastCount, retries, pendingSlot=-1;
     private Predicate<ItemStack> gathering;
@@ -58,6 +58,8 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         override(s.mineScanDroppedItems,true);override(s.exploreForBlocks,true);
         override(s.blocksToAvoidBreaking,new ArrayList<>(s.blocksToAvoidBreaking.value));
         s.blocksToAvoidBreaking.value.add(Blocks.CRAFTING_TABLE);s.blocksToAvoidBreaking.value.add(Blocks.FURNACE);
+        // Snapped (non-realistic) aim gets block placements undone by the server; ease it for this task only.
+        if(!GradualLook.enabled()) { forcedRealistic=true;GradualLook.enable(true);log("Realistic aiming is on for this task; your setting returns when it ends"); }
         active=true;setStage("Starting from current inventory");
     }
     private <T> void override(Settings.Setting<T> setting,T value) { saved.put(setting,setting.value);setting.value=value;applied.put(setting,value); }
@@ -70,6 +72,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         active=false;mining=smelting=false;recipe=null;placing=null;pendingSlot=-1;
         baritone.getMineProcess().cancel();baritone.getInputOverrideHandler().clearAllKeys();
         closeMenu();restore();stage=reason;log(reason);
+        if(forcedRealistic) { forcedRealistic=false;GradualLook.enable(false); }
     }
     @Override public boolean isActive() { return active; }
     @Override public boolean isTemporary() { return true; }
@@ -297,7 +300,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
             BlockPos support=pos.below();
             Rotation aim=RotationUtils.calcRotationFromVec3d(ctx.playerHead(),new Vec3(pos.getX()+0.5,pos.getY(),pos.getZ()+0.5),ctx.playerRotations());
             baritone.getLookBehavior().updateTarget(aim,true);
-            if(ctx.objectMouseOver() instanceof BlockHitResult hit && hit.getType()==HitResult.Type.BLOCK && hit.getBlockPos().equals(support) && hit.getDirection()==Direction.UP && tick-lastClick>=10) {
+            if(settled(aim) && ctx.objectMouseOver() instanceof BlockHitResult hit && hit.getType()==HitResult.Type.BLOCK && hit.getBlockPos().equals(support) && hit.getDirection()==Direction.UP && tick-lastClick>=10) {
                 useBlock(hit);lastClick=tick;
             }
             return pause();
@@ -306,7 +309,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         if(reachable.isEmpty() && !prepareBuildingBlocks())return pause();
         if(reachable.isEmpty())return new PathingCommand(new GoalGetToBlock(pos),PathingCommandType.REVALIDATE_GOAL_AND_PATH);
         baritone.getLookBehavior().updateTarget(reachable.get(),true);
-        if(ctx.objectMouseOver() instanceof BlockHitResult hit && hit.getType()==HitResult.Type.BLOCK && hit.getBlockPos().equals(pos) && tick-lastClick>=10) {
+        if(settled(reachable.get()) && ctx.objectMouseOver() instanceof BlockHitResult hit && hit.getType()==HitResult.Type.BLOCK && hit.getBlockPos().equals(pos) && tick-lastClick>=10) {
             useBlock(hit);lastClick=tick;
         }
         return pause();
@@ -330,6 +333,11 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         BlockPos drop=ctx.entitiesStream().filter(e->e instanceof net.minecraft.world.entity.item.ItemEntity item && item.getItem().is(Items.CRAFTING_TABLE) && e.distanceToSqr(Vec3.atCenterOf(pickup))<36)
                 .findFirst().map(net.minecraft.world.entity.Entity::blockPosition).orElse(pickup);
         return new PathingCommand(new GoalBlock(drop),PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+    }
+    /** Click only once the eased aim has come to rest on the target, not while sweeping across it. */
+    private boolean settled(Rotation target) {
+        Rotation actual=ctx.playerRotations();
+        return Math.abs(Rotation.normalizeYaw(target.getYaw()-actual.getYaw()))<2 && Math.abs(target.getPitch()-actual.getPitch())<2;
     }
     private void useBlock(BlockHitResult hit) {
         var result=ctx.playerController().processRightClickBlock(ctx.player(),ctx.world(),InteractionHand.MAIN_HAND,hit);

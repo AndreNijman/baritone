@@ -265,7 +265,12 @@ may be one block higher or lower, and when none is visible the bot walks a few
 blocks and looks again (three times) instead of stopping.
 
 Keep realistic movement on: with it off, rotations snap instantly and transmitted
-rotations need not match the camera, which servers can reject.
+rotations need not match the camera, which servers can reject. In real use with it
+off, placed crafting tables were removed by the server within about a second.
+`#diamondpickaxe` therefore switches realistic aiming on for the duration of the
+task when it is off, and restores your setting (without saving) when the task ends.
+Station placement and use also wait until the eased aim has settled within two
+degrees of the target before clicking.
 
 ### What was tested (compat.9)
 
