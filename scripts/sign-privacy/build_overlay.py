@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 UPSTREAM_SHA256 = "49adfc063cfbfd0b6f08e9d814359807baa2d1768c0d39d6c5968268547cbca6"
 MINECRAFT_SHA1 = "e877b6a07acd633fb3bb475002175cec036e7b87"
-VERSION = "1.20.0+compat.8"
+VERSION = "1.20.0+compat.9"
 CLASSES = [
     "baritone/launch/privacy/SignTextPrivacy.class",
     "baritone/launch/privacy/SignTextPrivacy$Api.class",
@@ -33,6 +33,16 @@ CLASSES = [
     "baritone/utils/DiamondPickaxeProcess.class",
     "baritone/utils/DiamondPickaxeRecipes.class",
     "baritone/utils/DiamondPickaxeRecipes$Recipe.class",
+    "baritone/fz.class",
+    "baritone/utils/MobSafety.class",
+    "baritone/utils/MobSafety$Profile.class",
+    "baritone/utils/MobSafetyCommand.class",
+    "baritone/utils/MobSafetyProcess.class",
+    "baritone/utils/MobSafetyProcess$Threat.class",
+    "baritone/utils/MobSafetyProcess$Escape.class",
+    "baritone/cc.class",
+    "baritone/cb.class",
+    "baritone/utils/WaterPassage.class",
 ]
 
 
@@ -44,7 +54,7 @@ def main():
     parser.add_argument("--jdk", type=Path, default=Path("/usr/lib/jvm/java-25-openjdk"))
     parser.add_argument("--libraries", type=Path, default=Path("/var/home/andre/.var/app/com.modrinth.ModrinthApp/data/ModrinthApp/meta/libraries"))
     parser.add_argument("--metadata", type=Path, default=ROOT / ".validation/inputs/26.3.json")
-    parser.add_argument("--output", type=Path, default=ROOT / "dist/baritone-api-fabric-1.20.0-compat.8.jar", help="Separate candidate path for immutable concurrent test inputs")
+    parser.add_argument("--output", type=Path, default=ROOT / "dist/baritone-api-fabric-1.20.0-compat.9.jar", help="Separate candidate path for immutable concurrent test inputs")
     options = parser.parse_args()
     assert hashlib.sha256(options.upstream.read_bytes()).hexdigest() == UPSTREAM_SHA256, "Wrong upstream release"
     assert hashlib.sha1(options.minecraft.read_bytes()).hexdigest() == MINECRAFT_SHA1, "Wrong Minecraft 26.3 client"
@@ -70,11 +80,13 @@ mkdir -p /scratch/home /scratch/tmp /scratch/classes /scratch/tools /scratch/tes
 JAVAC_FLAGS='-J-Xmx256m -J-XX:CompressedClassSpaceSize=64m -J-XX:ReservedCodeCacheSize=64m -J-XX:ActiveProcessorCount=2'
 JAVA_FLAGS='-Xmx256m -XX:CompressedClassSpaceSize=64m -XX:ReservedCodeCacheSize=64m -XX:ActiveProcessorCount=2'
 "$PATCH_JDK/bin/javac" $JAVAC_FLAGS --release 25 -d /scratch/classes /source/src/launch/java/baritone/launch/privacy/SignTextPrivacy.java
-"$PATCH_JDK/bin/javac" $JAVAC_FLAGS --release 17 -cp /deps/asm.jar -d /scratch/tools /source/scripts/sign-privacy/GenerateMixin.java /source/scripts/compatibility/PatchMovementInput.java /source/scripts/compatibility/PatchMining.java /source/scripts/compatibility/PatchGradualLook.java
+"$PATCH_JDK/bin/javac" $JAVAC_FLAGS --release 17 -cp /deps/asm.jar -d /scratch/tools /source/scripts/sign-privacy/GenerateMixin.java /source/scripts/compatibility/PatchMovementInput.java /source/scripts/compatibility/PatchMining.java /source/scripts/compatibility/PatchGradualLook.java /source/scripts/compatibility/PatchMobAvoidance.java /source/scripts/compatibility/PatchWaterPassage.java
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar GenerateMixin /inputs/minecraft.jar /scratch/classes
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar PatchMovementInput /inputs/upstream.jar /scratch/classes
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar PatchMining /inputs/upstream.jar /scratch/classes
-"$PATCH_JDK/bin/javac" $JAVAC_FLAGS -proc:none --release 25 -cp "$LOOK_CP" -d /scratch/classes /source/src/main/java/baritone/utils/StopHotkey.java /source/src/main/java/baritone/utils/GradualLook.java /source/src/main/java/baritone/utils/GradualLookCommand.java /source/src/main/java/baritone/utils/DiamondPickaxeCommand.java /source/src/main/java/baritone/utils/DiamondPickaxeProcess.java /source/src/main/java/baritone/utils/DiamondPickaxeRecipes.java
+"$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar PatchMobAvoidance /inputs/upstream.jar /scratch/classes
+"$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar PatchWaterPassage /inputs/upstream.jar /scratch/classes
+"$PATCH_JDK/bin/javac" $JAVAC_FLAGS -proc:none --release 25 -cp "$LOOK_CP" -d /scratch/classes /source/src/main/java/baritone/utils/StopHotkey.java /source/src/main/java/baritone/utils/GradualLook.java /source/src/main/java/baritone/utils/GradualLookCommand.java /source/src/main/java/baritone/utils/DiamondPickaxeCommand.java /source/src/main/java/baritone/utils/DiamondPickaxeProcess.java /source/src/main/java/baritone/utils/DiamondPickaxeRecipes.java /source/src/main/java/baritone/utils/MobSafety.java /source/src/main/java/baritone/utils/MobSafetyCommand.java /source/src/main/java/baritone/utils/MobSafetyProcess.java /source/src/main/java/baritone/utils/WaterPassage.java
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tools:/deps/asm.jar PatchGradualLook /inputs/upstream.jar /scratch/classes
 "$PATCH_JDK/bin/javac" $JAVAC_FLAGS --release 25 -cp /scratch/classes -d /scratch/tests $(find /source/scripts/sign-privacy/fixture -name '*.java')
 "$PATCH_JDK/bin/java" $JAVA_FLAGS -cp /scratch/tests:/scratch/classes baritone.launch.privacy.SignTextPrivacyTest
@@ -110,7 +122,7 @@ PY
     classes = json.loads(payload)
     assert sorted(classes) == sorted(CLASSES), "Unexpected compiled files"
     decoded = {name: base64.b64decode(data, validate=True) for name, data in classes.items()}
-    assert sum(map(len, decoded.values())) < 131072
+    assert sum(map(len, decoded.values())) < 196608  # MovementHelper alone is 23 KiB
     for line in lines:
         if not line.startswith("BUILD_CLASSES="):
             print(line)
@@ -135,6 +147,8 @@ PY
                 config["custom"]["gradualgroundaim"] = "12 degree yaw / 8 degree pitch caps, shared fork/live processor and matching-view mining"
                 config["custom"]["realisticmovement"] = "Persistent realistic on/off toggle; restores prior movement preset and preserves sprint/parkour"
                 config["custom"]["diamondpickaxe"] = "Survival mining/crafting/smelting with reserved ingredients and dirt scaffolding"
+                config["custom"]["mobsafety"] = "Hostile-only path avoidance and retreat from nearby hostiles during Baritone tasks; persistent avoidmobs toggle"
+                config["custom"]["waterpassage"] = "Shallow horizontally flowing water is walkable and wet two-high entries float only to the floor (lake-fed tunnels)"
                 config["custom"]["stophotkey"] = "Numpad 9 executes stop, including in crafting screens"
                 config["custom"]["miningcompatibility"] = "Minecraft 26.3 normal Punch packets and held-item swing animation"
                 data = (json.dumps(config, indent=2) + "\n").encode()
@@ -148,9 +162,9 @@ PY
 
     with zipfile.ZipFile(options.upstream) as original, zipfile.ZipFile(destination) as patched:
         assert patched.testzip() is None
-        assert set(patched.namelist()) - set(original.namelist()) == set(CLASSES) - {"baritone/fp.class", "baritone/fj.class", "baritone/a.class", "baritone/f.class", "baritone/f$a.class", "baritone/f$b.class", "baritone/api/utils/RotationUtils.class", "baritone/api/behavior/look/IAimProcessor.class"}
+        assert set(patched.namelist()) - set(original.namelist()) == set(CLASSES) - {"baritone/fp.class", "baritone/fj.class", "baritone/a.class", "baritone/f.class", "baritone/f$a.class", "baritone/f$b.class", "baritone/api/utils/RotationUtils.class", "baritone/api/behavior/look/IAimProcessor.class", "baritone/fz.class", "baritone/cc.class", "baritone/cb.class"}
         changed = {name for name in original.namelist() if original.read(name) != patched.read(name)}
-        assert changed == {"mixins.baritone.json", "fabric.mod.json", "baritone/fp.class", "baritone/fj.class", "baritone/a.class", "baritone/f.class", "baritone/f$a.class", "baritone/f$b.class", "baritone/api/utils/RotationUtils.class", "baritone/api/behavior/look/IAimProcessor.class"}
+        assert changed == {"mixins.baritone.json", "fabric.mod.json", "baritone/fp.class", "baritone/fj.class", "baritone/a.class", "baritone/f.class", "baritone/f$a.class", "baritone/f$b.class", "baritone/api/utils/RotationUtils.class", "baritone/api/behavior/look/IAimProcessor.class", "baritone/fz.class", "baritone/cc.class", "baritone/cb.class"}
         assert not any("/lang/" in name for name in original.namelist())
     checksum = hashlib.sha256(destination.read_bytes()).hexdigest()
     destination.with_suffix(".jar.sha256").write_text(f"{checksum}  {destination.name}\n")
@@ -173,8 +187,10 @@ PY
         source_files.update(str(path.relative_to(ROOT)) for path in (ROOT / directory).rglob("*") if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc")
     source_files.update(["src/launch/java/baritone/launch/mixins/MixinSignEditScreen.java","src/launch/java/baritone/launch/mixins/MixinKeyboardHandler.java","src/main/java/baritone/utils/StopHotkey.java"])
     source_files.update(str(p.relative_to(ROOT)) for p in (ROOT / "src/main/java/baritone/utils").glob("DiamondPickaxe*.java"))
+    source_files.update(str(p.relative_to(ROOT)) for p in (ROOT / "src/main/java/baritone/utils").glob("MobSafety*.java"))
+    source_files.add("src/main/java/baritone/utils/WaterPassage.java")
     source_files.update(["src/main/java/baritone/utils/GradualLook.java", "src/main/java/baritone/utils/GradualLookCommand.java"])
-    source_archive = destination.parent / "baritone-1.20.0-compat.8-source.zip"
+    source_archive = destination.parent / "baritone-1.20.0-compat.9-source.zip"
     with zipfile.ZipFile(source_archive, "w") as archive:
         for name in sorted(source_files):
             path = ROOT / name
@@ -188,7 +204,7 @@ PY
         with zipfile.ZipFile(artifact) as archive:
             assert archive.testzip() is None
     print("Minecraft constructor: exactly one matching Component.getString call")
-    print("JAR verified: only eight original classes and two metadata files changed; twelve new classes; bundled libraries unchanged")
+    print("JAR verified: only eleven original classes and two metadata files changed; nineteen new classes; bundled libraries unchanged")
     print(f"Output: {destination}\nSHA-256: {checksum}")
     print(f"Test pack: {test_pack}\nComplete source: {source_archive}")
 

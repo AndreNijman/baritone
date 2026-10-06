@@ -20,9 +20,9 @@ package baritone.utils.pathing;
 import baritone.Baritone;
 import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.IPlayerContext;
+import baritone.utils.MobSafety;
 import it.unimi.dsi.fastutil.longs.Long2DoubleOpenHashMap;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.monster.Enderman;
 import net.minecraft.world.entity.monster.spider.Spider;
 import net.minecraft.world.entity.monster.zombie.ZombifiedPiglin;
@@ -73,11 +73,11 @@ public class Avoidance {
         }
         if (mobCoeff != 1.0D) {
             ctx.entitiesStream()
-                    .filter(entity -> entity instanceof Mob)
+                    .filter(MobSafety::hostile)
                     .filter(entity -> (!(entity instanceof Spider)) || ctx.player().getLightLevelDependentMagicValue() < 0.5)
                     .filter(entity -> !(entity instanceof ZombifiedPiglin) || ((ZombifiedPiglin) entity).getLastHurtByMob() != null)
                     .filter(entity -> !(entity instanceof Enderman) || ((Enderman) entity).isCreepy())
-                    .forEach(entity -> res.add(new Avoidance(entity.blockPosition(), mobCoeff, Baritone.settings().mobAvoidanceRadius.value)));
+                    .forEach(entity -> res.add(new Avoidance(entity.blockPosition(), mobCoeff, MobSafety.avoidRadius(entity, Baritone.settings().mobAvoidanceRadius.value))));
         }
         return res;
     }

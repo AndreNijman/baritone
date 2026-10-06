@@ -29,6 +29,7 @@ import baritone.pathing.movement.MovementState.MovementTarget;
 import baritone.pathing.precompute.Ternary;
 import baritone.utils.BlockStateInterface;
 import baritone.utils.ToolSet;
+import baritone.utils.WaterPassage;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
@@ -172,7 +173,7 @@ public interface MovementHelper extends ActionCosts, Helper {
         }
         FluidState fluidState = state.getFluidState();
         if (!fluidState.isEmpty()) {
-            if (fluidState.getType().getAmount(fluidState) != 8) {
+            if (WaterPassage.stateAmount(fluidState.getType().getAmount(fluidState), state) != 8) {
                 return NO;
             } else {
                 return MAYBE;
@@ -212,7 +213,7 @@ public interface MovementHelper extends ActionCosts, Helper {
 
         FluidState fluidState = state.getFluidState();
         if (!fluidState.isEmpty()) {
-            if (isFlowing(x, y, z, state, bsi)) {
+            if (WaterPassage.blocks(isFlowing(x, y, z, state, bsi), state, bsi.get0(x, y + 1, z), bsi.get0(x, y - 1, z))) {
                 return false;
             }
             // Everything after this point has to be a special case as it relies on the water not being flowing, which means a special case is needed.

@@ -123,7 +123,7 @@ public abstract class Movement implements IMovement, MovementHelper {
     public MovementStatus update() {
         ctx.player().getAbilities().flying = false;
         currentState = updateState(currentState);
-        if (MovementHelper.isLiquid(ctx, ctx.playerFeet()) && ctx.player().position().y < dest.y + 0.6) {
+        if (MovementHelper.isLiquid(ctx, ctx.playerFeet()) && ctx.player().position().y < dest.y + baritone.utils.WaterPassage.afloat(ctx, dest)) {
             currentState.setInput(Input.JUMP, true);
         }
         if (ctx.player().isInWall()) {
@@ -146,6 +146,7 @@ public abstract class Movement implements IMovement, MovementHelper {
         if (currentState.getStatus().isComplete()) {
             baritone.getInputOverrideHandler().clearAllKeys();
         }
+        baritone.utils.WaterPassage.settle(ctx, dest);
 
         return currentState.getStatus();
     }

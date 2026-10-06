@@ -70,6 +70,7 @@ public final class GradualLook {
         }
         baritone.getCommandManager().getRegistry().register(new GradualLookCommand(baritone));
         baritone.getCommandManager().getRegistry().register(new DiamondPickaxeCommand(baritone));
+        MobSafety.register(baritone);
         if (enabled) enable(true);
     }
     public static void beginTick(IPlayerContext context) {

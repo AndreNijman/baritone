@@ -1,16 +1,16 @@
-# Baritone 1.20.0: sign privacy, movement and autonomous pickaxe crafting
+# Baritone 1.20.0: sign privacy, movement, autonomous pickaxe crafting and mob avoidance
 
 Target: **Minecraft 26.3, Fabric Loader 0.19.5 or later, Java 25 or later**.
 
 The candidate includes the sign privacy patch and the Minecraft 26.3 keyboard
 input and mining corrections described in `docs/anticheat-compatibility.md`.
 
-The installable JAR is `dist/baritone-api-fabric-1.20.0-compat.8.jar`.
+The installable JAR is `dist/baritone-api-fabric-1.20.0-compat.9.jar`.
 Replace the existing Baritone JAR in the instance's `mods` directory with this file.
 Restart Minecraft, and run `#help` to confirm Baritone loads. Only one Baritone JAR
 should be installed. This is the API release with its normal commands and bundled
-nether pathfinder. Eight original classes are changed: input, mining, core initialization, look behavior,
-both aim processors, geometric reachability and its API. Twelve classes are added.
+nether pathfinder. Ten original classes are changed: input, mining, core initialization, look behavior,
+both aim processors, geometric reachability and its API, mob avoidance and water passability. Nineteen classes are added.
 Every other original class and nested JAR is preserved byte for byte.
 
 ## What the patch does
@@ -74,8 +74,8 @@ resource, which alone is not proof that the corresponding mod is installed.
 - Initialized the real Baritone API, core pathing/input processes, and the
   help/goto/stop/mine/build/follow command registrations in the headless runtime.
 - Compiled the included mixin source against the real game and Mixin API.
-- Checked archive integrity: eight original classes and two metadata files change.
-  Twelve classes are added; bundled libraries are unchanged.
+- Checked archive integrity: ten original classes and two metadata files change.
+  Nineteen classes are added; bundled libraries are unchanged.
 - Passed 142,626 geometry and steering assertions covering wraparound, angle caps, pitch limits,
   mouse-sensitivity increments, convergence and disabling the controller.
 - Compiled the changed reachability API independently of the new main implementation.
@@ -176,6 +176,83 @@ The top-row 9 is unaffected. Num Lock does not change the binding; holding the
 key does not repeatedly invoke stop. The binding is active only in a world and
 consumes that keypad key before ordinary screen handling.
 
+## Hostile mob avoidance (compat.9)
+
+While any Baritone task runs (`#diamondpickaxe`, `#mine`, `#goto` and the rest),
+it now stays away from hostile mobs. `#avoidmobs` toggles this; `#avoidmobs on`,
+`#avoidmobs off` and `#avoidmobs status` set or inspect it. It defaults on and the
+choice is saved in `baritone/mob-safety.properties`. Manual play is never taken
+over: nothing happens unless a Baritone process is in control.
+
+- **Planning.** Paths cost four times as much near hostile mobs: within 8 blocks
+  of ordinary mobs, 10 of creepers, spiders and fast melee mobs, 14 of skeletons
+  and other ranged mobs, and 20 of wardens (Baritone's spawner avoidance also
+  applies). Upstream's filter used `instanceof Mob`, which under Mojang names
+  also matches cows, villagers and golems; it now requires a hostile (`Enemy`)
+  mob, so passive animals are ignored. Enabling sets `avoidance true` and
+  `mobAvoidanceCoefficient 4.0`; turning it off restores the previous values
+  unless you changed them meanwhile.
+- **Retreat.** The running task is paused, not cancelled, when a hostile comes
+  within its trigger distance:
+
+  | Mob | With line of sight | Without | Runs to |
+  | --- | ---: | ---: | ---: |
+  | Zombies, slimes, silverfish and other melee | 6 | 3 | 16 |
+  | Spiders, cave spiders, vindicators, hoglins, zoglins, ravagers, angry piglins/endermen | 8 | 4 | 18 |
+  | Skeletons/strays/bogged with a bow, pillagers, witches, blazes, breezes, guardians, shulkers, evokers | 16 | 4 | 24, or any nearby spot they cannot see |
+  | Creepers (9 once swelling, with or without sight) | 8 | 5 | 16 |
+  | Wardens | 20 | 20 | 30 |
+
+  Melee mobs more than 4 blocks above or below (8 for spiders) are ignored, since
+  they cannot reach. Against ranged mobs, standing spots within 8 blocks whose head
+  position they cannot see count as safe, so the bot ducks behind cover rather than
+  running in the open. The bot paths away through ordinary movement, so realistic
+  aiming, sprint and parkour still apply. An open crafting table or furnace is
+  closed normally first. The escape route is kept while its end stays safe from
+  where the mobs are now, so the bot does not stop to replan every second. Once
+  nothing qualifies within those distances plus six blocks for one second, the task
+  resumes and replans from where it stands. Calm neutral mobs, no-AI mobs and flying
+  mobs (phantoms, ghasts, vexes) do not trigger a retreat.
+- **Bounds.** A retreat that lasts 30 seconds, or finds no escape path three
+  times, hands control back to the task for five seconds (only a swelling creeper
+  or warden interrupts that pause). `#stop` and Numpad 9 cancel a retreat like any
+  other task.
+
+It never attacks. A melee mob that keeps chasing causes repeated retreats rather
+than progress, and in tight caves or dead ends there may be nowhere to go.
+Arrows already in flight are not dodged. Food, totems and combat are still not
+handled.
+
+## Shallow flowing water (compat.9)
+
+Upstream Baritone refuses to walk through flowing water, and also treats still
+water next to any flowing block as flowing. A lake spilling one block deep into a
+two-high tunnel is therefore a wall to it: the bot treads water at the mouth and
+never enters. Compat.9 allows a horizontally flowing water layer with open space
+above and a floor or more water below. Falling water, fully submerged water, water
+over a drop and all lava keep the upstream rule.
+
+### What was tested (compat.9)
+
+Rendered clean-room trials on the disposable Paper/Grim server (report:
+`../andre-anticheat/reports/2026-10-06-mobs.md`), compat.8 as the control:
+
+- Motionless zombie on a straight 20-block route: compat.8 passed 0.10 blocks
+  from it; compat.9 kept 8.25 blocks away and arrived. A cow in the same spot is
+  ignored (same straight path as compat.8).
+- `#diamondpickaxe` with a hunting zombie: compat.8 took 8 hits and died; compat.9
+  took no damage over five retreats (closest 5.1 blocks).
+- `#diamondpickaxe` with a creeper: compat.8 was blown up and never finished;
+  compat.9 took no damage, no explosion, and completed the diamond pickaxe.
+- Lake spilling flowing water into a two-high tunnel: compat.8 trod water at the
+  mouth until timeout; the final compat.9 entered, waded through and arrived.
+
+Those mob trials ran on earlier compat.9 candidates; the final JAR was only
+trialled on the flowing-water tunnel and the headless runtime suite was last
+run on an intermediate candidate. The skeleton fixture, the line-of-sight hiding
+and the retreat route-keeping changes have no rendered trial yet.
+Real-world testing is still needed.
+
 ## Autonomous diamond pickaxe
 
 Run `#diamondpickaxe` in a normal survival world. It reuses supplies you already
@@ -269,7 +346,7 @@ Run the real-runtime tests with already cached Linux launcher libraries:
 python3 scripts/compatibility/test_runtime.py \
   --minecraft /path/to/minecraft-26.3.jar \
   --metadata /path/to/26.3.json \
-  --candidate dist/baritone-api-fabric-1.20.0-compat.8.jar \
+  --candidate dist/baritone-api-fabric-1.20.0-compat.9.jar \
   --libraries /path/to/launcher/meta/libraries \
   --fabric-runtime \
   --upstream-control /path/to/baritone-api-fabric-1.20.0.jar

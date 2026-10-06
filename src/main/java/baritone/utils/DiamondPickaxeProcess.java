@@ -33,7 +33,8 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
     private int gatheringCount;
     private Block[] gatheringBlocks;
     private DiamondPickaxeRecipes.Recipe recipe;
-    private int craftedBefore, recipeTick;
+    private int craftedBefore, recipeTick, placingSince;
+    private final Set<BlockPos> rejectedPlacements=new HashSet<>();
     private AbstractContainerMenu ownedMenu;
     private BlockPos table, furnace, placing;
     private net.minecraft.world.level.Level world;
@@ -45,7 +46,7 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         if (ctx.player()==null || ctx.world()==null) { log("Join a world first");return; }
         if (ctx.player().containerMenu!=ctx.player().inventoryMenu || !ctx.player().inventoryMenu.getCarried().isEmpty()) { log("Close the current container and clear the cursor first");return; }
         baritone.getPathingBehavior().cancelEverything();
-        world=ctx.world();tick=lastClick=progressTick=0;retries=0;table=furnace=placing=null;recipe=null;ownedMenu=null;
+        world=ctx.world();tick=lastClick=progressTick=0;retries=0;table=furnace=placing=null;recipe=null;ownedMenu=null;rejectedPlacements.clear();
         var s=BaritoneAPI.getSettings();
         override(s.allowBreak,true);override(s.allowPlace,true);override(s.allowInventory,false);
         // Recipe ingredients must never be used as path scaffolding.
@@ -252,10 +253,12 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         }
         if(pos==null) {
             if(count(item)==0) { recipe=null;smelting=false;return pause(); }
-            if(placing==null)placing=findPlacement();
+            if(placing==null) { placing=findPlacement();placingSince=tick; }
             if(placing==null) { stop("No reachable dry floor for a crafting station");return pause(); }
             pos=placing;
             if(ctx.world().getBlockState(pos).is(block)) { if(block==Blocks.CRAFTING_TABLE)table=pos;else furnace=pos;placing=null;return pause(); }
+            // Something (a block or entity) kept the click from landing: choose another spot.
+            if(tick-placingSince>100) { rejectedPlacements.add(pos);placing=null;return pause(); }
             if(!equip(item))return pause();
             BlockPos support=pos.below();
             Rotation aim=RotationUtils.calcRotationFromVec3d(ctx.playerHead(),new Vec3(pos.getX()+0.5,pos.getY(),pos.getZ()+0.5),ctx.playerRotations());
@@ -284,7 +287,9 @@ public final class DiamondPickaxeProcess implements IBaritoneProcess, AbstractGa
         for(int radius=1;radius<=3;radius++) for(int x=-radius;x<=radius;x++)for(int z=-radius;z<=radius;z++) {
             if(Math.max(Math.abs(x),Math.abs(z))!=radius)continue;
             BlockPos p=feet.offset(x,0,z);
-            if(ctx.world().getBlockState(p).isAir() && ctx.world().getFluidState(p).isEmpty() && ctx.world().getBlockState(p.below()).isSolidRender() && Vec3.atCenterOf(p.below()).distanceToSqr(ctx.playerHead())<16)return p;
+            if(rejectedPlacements.contains(p) || !ctx.world().getBlockState(p).isAir() || !ctx.world().getFluidState(p).isEmpty() || !ctx.world().getBlockState(p.below()).isSolidRender() || Vec3.atCenterOf(p.below()).distanceToSqr(ctx.playerHead())>=16)continue;
+            // The support's top face must be visible from the eye, or the placement click can never land.
+            if(RotationUtils.reachableOffset(ctx,p.below(),new Vec3(p.getX()+0.5,p.getY(),p.getZ()+0.5),ctx.playerController().getBlockReachDistance(),false).isPresent())return p;
         }
         return null;
     }
